@@ -5,6 +5,7 @@ interface User {
 	email: string;
 	name: string;
 	role: string;
+	username: string;
 }
 
 export const user = writable<User | null>(null);

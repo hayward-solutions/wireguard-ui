@@ -132,6 +132,38 @@
 					</div>
 				</div>
 
+				<div class="col-span-full border-t border-zinc-100 pt-5">
+					<h3 class="text-sm font-semibold text-zinc-900">Peer Defaults</h3>
+					<p class="mt-0.5 text-xs text-zinc-400">Applied to new peers when not overridden</p>
+				</div>
+
+				<div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+					<div>
+						<label for="default_allowed_ips" class="block text-sm font-medium text-zinc-700">Allowed IPs</label>
+						<input
+							id="default_allowed_ips"
+							type="text"
+							bind:value={config.default_allowed_ips}
+							placeholder="0.0.0.0/0, ::/0"
+							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+						/>
+					</div>
+					<div>
+						<label for="default_dns" class="block text-sm font-medium text-zinc-700">DNS</label>
+						<input
+							id="default_dns"
+							type="text"
+							bind:value={config.default_dns}
+							placeholder="Falls back to server DNS if empty"
+							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+						/>
+					</div>
+				</div>
+
+				<div class="col-span-full border-t border-zinc-100 pt-5">
+					<h3 class="text-sm font-semibold text-zinc-900">Hooks</h3>
+				</div>
+
 				<div>
 					<label for="post_up" class="block text-sm font-medium text-zinc-700">Post Up</label>
 					<input

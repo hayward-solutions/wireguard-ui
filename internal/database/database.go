@@ -14,14 +14,20 @@ type Store interface {
 
 	// Peers
 	ListPeers(ctx context.Context) ([]domain.Peer, error)
+	ListPeersByUser(ctx context.Context, userID string) ([]domain.Peer, error)
 	GetPeer(ctx context.Context, id string) (*domain.Peer, error)
 	CreatePeer(ctx context.Context, p *domain.Peer) error
 	UpdatePeer(ctx context.Context, p *domain.Peer) error
 	DeletePeer(ctx context.Context, id string) error
 
 	// Users
-	UpsertUser(ctx context.Context, u *domain.User) error
+	ListUsers(ctx context.Context) ([]domain.User, error)
 	GetUser(ctx context.Context, id string) (*domain.User, error)
+	GetUserByUsername(ctx context.Context, username string) (*domain.User, error)
+	CreateUser(ctx context.Context, u *domain.User) error
+	UpdateUser(ctx context.Context, u *domain.User) error
+	UpdateUserPassword(ctx context.Context, id string, passwordHash string) error
+	DeleteUser(ctx context.Context, id string) error
 
 	// Tunnels (stretch)
 	ListTunnels(ctx context.Context) ([]domain.Tunnel, error)

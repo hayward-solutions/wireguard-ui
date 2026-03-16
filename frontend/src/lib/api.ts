@@ -68,7 +68,7 @@ class APIClient {
 		return this.request<Peer>('GET', `/api/v1/peers/${id}`);
 	}
 
-	async createPeer(data: { name: string; email?: string; allowed_ips?: string; dns?: string }) {
+	async createPeer(data: { name: string; allowed_ips?: string; dns?: string }) {
 		return this.request<Peer>('POST', '/api/v1/peers', data);
 	}
 
@@ -96,6 +96,38 @@ class APIClient {
 	async getStats() {
 		return this.request<PeerStats[]>('GET', '/api/v1/stats');
 	}
+
+	// Users
+	async listUsers() {
+		return this.request<User[]>('GET', '/api/v1/users');
+	}
+
+	async getUser(id: string) {
+		return this.request<User>('GET', `/api/v1/users/${id}`);
+	}
+
+	async createUser(data: { username: string; password: string; name?: string; role?: string }) {
+		return this.request<User>('POST', '/api/v1/users', data);
+	}
+
+	async updateUser(id: string, data: { username?: string; name?: string; role?: string }) {
+		return this.request<User>('PUT', `/api/v1/users/${id}`, data);
+	}
+
+	async deleteUser(id: string) {
+		return this.request<void>('DELETE', `/api/v1/users/${id}`);
+	}
+
+	async resetPassword(id: string, password: string) {
+		return this.request<{ message: string }>('POST', `/api/v1/users/${id}/reset-password`, { password });
+	}
+
+	async changePassword(currentPassword: string, newPassword: string) {
+		return this.request<{ message: string }>('POST', '/api/v1/me/password', {
+			current_password: currentPassword,
+			new_password: newPassword
+		});
+	}
 }
 
 export interface ServerConfig {
@@ -108,12 +140,13 @@ export interface ServerConfig {
 	post_up: string;
 	post_down: string;
 	endpoint: string;
+	default_allowed_ips: string;
+	default_dns: string;
 }
 
 export interface Peer {
 	id: string;
 	name: string;
-	email: string;
 	public_key: string;
 	allowed_ips: string;
 	address: string;
@@ -121,8 +154,17 @@ export interface Peer {
 	persistent_keepalive: number;
 	enabled: boolean;
 	created_by: string;
+	created_by_name?: string;
 	created_at: string;
 	updated_at: string;
+}
+
+export interface User {
+	id: string;
+	username: string;
+	name: string;
+	role: string;
+	created_at: string;
 }
 
 export interface PeerStats {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/hayward-solutions/wireguard-ui/internal/api"
 	"github.com/hayward-solutions/wireguard-ui/internal/auth"
 	"github.com/hayward-solutions/wireguard-ui/internal/config"
+	"github.com/hayward-solutions/wireguard-ui/internal/crypto"
 	"github.com/hayward-solutions/wireguard-ui/internal/database"
 	"github.com/hayward-solutions/wireguard-ui/internal/domain"
 	"github.com/hayward-solutions/wireguard-ui/internal/monitor"
@@ -38,14 +40,24 @@ func run() error {
 		return err
 	}
 
+	// Initialize encryptor for at-rest encryption
+	encryptor, err := crypto.NewEncryptor(cfg.EncryptionKey)
+	if err != nil {
+		return err
+	}
+	if encryptor != nil {
+		slog.Info("at-rest encryption enabled")
+	}
+
 	// Initialize database
 	var store database.Store
 	switch cfg.DatabaseDriver {
 	case "sqlite":
-		store, err = database.NewSQLiteStore(cfg.DatabaseDSN)
+		store, err = database.NewSQLiteStore(cfg.DatabaseDSN, encryptor)
+	case "postgres":
+		store, err = database.NewPostgresStore(cfg.DatabaseDSN, encryptor)
 	default:
-		slog.Error("unsupported database driver", "driver", cfg.DatabaseDriver)
-		return err
+		return fmt.Errorf("unsupported database driver: %s", cfg.DatabaseDriver)
 	}
 	if err != nil {
 		return err
@@ -57,12 +69,27 @@ func run() error {
 	}
 	slog.Info("database migrated", "driver", cfg.DatabaseDriver)
 
+	// Seed default admin user if no users exist
+	if cfg.AdminPassword != "" {
+		if err := api.EnsureDefaultAdmin(ctx, store, cfg.AdminUsername, cfg.AdminPassword); err != nil {
+			return fmt.Errorf("failed to ensure default admin: %w", err)
+		}
+	}
+
 	// Initialize WireGuard manager
 	var wg wireguard.Manager
 	if cfg.WGMockMode {
 		wg = wireguard.NewMockManager()
+	} else if cfg.WGUserspaceMode {
+		wg, err = wireguard.NewUserspaceManager(cfg.WGInterfaceName)
+		if err != nil {
+			return err
+		}
 	} else {
-		wg = wireguard.NewMockManager() // TODO: replace with real wgctrl manager
+		wg, err = wireguard.NewWgctrlManager(cfg.WGInterfaceName)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Auto-initialize server config on first boot
@@ -76,16 +103,29 @@ func run() error {
 		if err != nil {
 			return err
 		}
+
+		// Build default PostUp/PostDown for NAT masquerade.
+		// eth+ matches any ethN interface (Docker, ECS, etc.).
+		wgIface := cfg.WGInterfaceName
+		postUp := fmt.Sprintf("iptables -t nat -A POSTROUTING -s %s -o eth+ -j MASQUERADE; iptables -A FORWARD -i %s -j ACCEPT; iptables -A FORWARD -o %s -j ACCEPT",
+			cfg.WGAddress, wgIface, wgIface)
+		postDown := fmt.Sprintf("iptables -t nat -D POSTROUTING -s %s -o eth+ -j MASQUERADE; iptables -D FORWARD -i %s -j ACCEPT; iptables -D FORWARD -o %s -j ACCEPT",
+			cfg.WGAddress, wgIface, wgIface)
+
 		serverCfg = &domain.ServerConfig{
-			ID:         "default",
-			PrivateKey: keyPair.PrivateKey,
-			PublicKey:  keyPair.PublicKey,
-			ListenPort: cfg.WGListenPort,
-			Address:    cfg.WGAddress,
-			DNS:        cfg.WGDNS,
-			MTU:        cfg.WGMTU,
-			Endpoint:   cfg.WGEndpoint,
-			CreatedAt:  time.Now(),
+			ID:                "default",
+			PrivateKey:        keyPair.PrivateKey,
+			PublicKey:         keyPair.PublicKey,
+			ListenPort:        cfg.WGListenPort,
+			Address:           cfg.WGAddress,
+			DNS:               cfg.WGDNS,
+			MTU:               cfg.WGMTU,
+			PostUp:            postUp,
+			PostDown:          postDown,
+			Endpoint:          cfg.WGEndpoint,
+			DefaultAllowedIPs: cfg.WGDefaultAllowedIPs,
+			DefaultDNS:        cfg.WGDNS,
+			CreatedAt:         time.Now(),
 		}
 		if err := store.SaveServerConfig(ctx, serverCfg); err != nil {
 			return err
@@ -94,8 +134,35 @@ func run() error {
 
 	// Start WireGuard interface
 	if err := wg.Start(serverCfg); err != nil {
-		slog.Error("failed to start wireguard", "error", err)
-		// Non-fatal in mock mode
+		if cfg.WGMockMode {
+			slog.Warn("failed to start wireguard (mock mode, continuing)", "error", err)
+		} else {
+			return fmt.Errorf("failed to start wireguard: %w", err)
+		}
+	}
+
+	// Re-sync all enabled peers from DB into the WireGuard interface.
+	// This ensures peers survive container restarts.
+	{
+		peers, err := store.ListPeers(ctx)
+		if err != nil {
+			slog.Error("failed to list peers for re-sync", "error", err)
+		} else {
+			synced := 0
+			for i := range peers {
+				if !peers[i].Enabled {
+					continue
+				}
+				if err := wg.AddPeer(&peers[i]); err != nil {
+					slog.Error("failed to re-sync peer", "error", err, "peer", peers[i].Name)
+				} else {
+					synced++
+				}
+			}
+			if synced > 0 {
+				slog.Info("re-synced peers from database", "count", synced)
+			}
+		}
 	}
 
 	// Start stats monitor
@@ -127,16 +194,14 @@ func run() error {
 	// Build router
 	frontendFS := frontend.FS()
 	router := api.NewRouter(api.RouterConfig{
-		Store:         store,
-		WG:            wg,
-		JWTManager:    jwtMgr,
-		OIDCProvider:  oidcProvider,
-		Monitor:       mon,
-		FrontendFS:    frontendFS,
-		DevMode:       cfg.DevMode,
-		AdminUsername: cfg.AdminUsername,
-		AdminPassword: cfg.AdminPassword,
-		APIKey:        cfg.APIKey,
+		Store:        store,
+		WG:           wg,
+		JWTManager:   jwtMgr,
+		OIDCProvider: oidcProvider,
+		Monitor:      mon,
+		FrontendFS:   frontendFS,
+		DevMode:      cfg.DevMode,
+		AdminAPIKey:  cfg.AdminAPIKey,
 	})
 
 	// Start HTTP server

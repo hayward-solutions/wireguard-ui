@@ -1,13 +1,34 @@
 <script lang="ts">
 	import { createPeer } from '$lib/stores/peers';
-	import { X } from 'lucide-svelte';
+	import { api } from '$lib/api';
+	import { X, ChevronDown, ChevronUp } from 'lucide-svelte';
 
 	let { open = $bindable(false) }: { open: boolean } = $props();
 
 	let name = $state('');
-	let email = $state('');
+	let allowedIPs = $state('');
+	let dns = $state('');
 	let creating = $state(false);
 	let error = $state('');
+	let showAdvanced = $state(false);
+	let defaultsLoaded = $state(false);
+
+	// Load server defaults when modal opens
+	$effect(() => {
+		if (open && !defaultsLoaded) {
+			api.getServer().then((server) => {
+				allowedIPs = server.default_allowed_ips || '0.0.0.0/0, ::/0';
+				dns = server.default_dns || '';
+				defaultsLoaded = true;
+			}).catch(() => {
+				allowedIPs = '0.0.0.0/0, ::/0';
+				defaultsLoaded = true;
+			});
+		}
+		if (!open) {
+			defaultsLoaded = false;
+		}
+	});
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
@@ -16,9 +37,12 @@
 		creating = true;
 		error = '';
 		try {
-			await createPeer(name.trim(), email.trim() || undefined);
+			await createPeer(name.trim(), allowedIPs.trim(), dns.trim());
 			name = '';
-			email = '';
+			allowedIPs = '';
+			dns = '';
+			showAdvanced = false;
+			defaultsLoaded = false;
 			open = false;
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to create peer';
@@ -54,16 +78,44 @@
 					/>
 				</div>
 
-				<div>
-					<label for="email" class="block text-sm font-medium text-zinc-700">Email (optional)</label>
-					<input
-						id="email"
-						type="email"
-						bind:value={email}
-						placeholder="user@example.com"
-						class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
-					/>
-				</div>
+				<button
+					type="button"
+					onclick={() => (showAdvanced = !showAdvanced)}
+					class="flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700"
+				>
+					{#if showAdvanced}
+						<ChevronUp size={14} />
+					{:else}
+						<ChevronDown size={14} />
+					{/if}
+					Advanced options
+				</button>
+
+				{#if showAdvanced}
+					<div class="space-y-4 rounded-lg border border-zinc-100 bg-zinc-50 p-4">
+						<div>
+							<label for="allowed_ips" class="block text-sm font-medium text-zinc-700">Allowed IPs</label>
+							<input
+								id="allowed_ips"
+								type="text"
+								bind:value={allowedIPs}
+								placeholder="0.0.0.0/0, ::/0"
+								class="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+							/>
+							<p class="mt-1 text-xs text-zinc-400">Routes to advertise to this peer</p>
+						</div>
+						<div>
+							<label for="dns" class="block text-sm font-medium text-zinc-700">DNS</label>
+							<input
+								id="dns"
+								type="text"
+								bind:value={dns}
+								placeholder="Uses server DNS if empty"
+								class="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+							/>
+						</div>
+					</div>
+				{/if}
 
 				{#if error}
 					<p class="text-sm text-red-600">{error}</p>

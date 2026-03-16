@@ -10,40 +10,47 @@ import (
 	"time"
 
 	"github.com/hayward-solutions/wireguard-ui/internal/crypto"
-	"github.com/hayward-solutions/wireguard-ui/internal/database/migrations"
+	pg_migrations "github.com/hayward-solutions/wireguard-ui/internal/database/pg_migrations"
 	"github.com/hayward-solutions/wireguard-ui/internal/domain"
-	_ "modernc.org/sqlite"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-type SQLiteStore struct {
+type PostgresStore struct {
 	db        *sql.DB
 	encryptor *crypto.Encryptor
 }
 
-func NewSQLiteStore(dsn string, encryptor *crypto.Encryptor) (*SQLiteStore, error) {
-	db, err := sql.Open("sqlite", dsn+"?_pragma=journal_mode(wal)&_pragma=foreign_keys(on)")
+func NewPostgresStore(dsn string, encryptor *crypto.Encryptor) (*PostgresStore, error) {
+	db, err := sql.Open("pgx", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("open sqlite: %w", err)
+		return nil, fmt.Errorf("open postgres: %w", err)
 	}
-	db.SetMaxOpenConns(1) // SQLite doesn't support concurrent writes
+
+	// Connection pool settings
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	db.SetConnMaxIdleTime(1 * time.Minute)
+
 	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("ping sqlite: %w", err)
+		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
-	return &SQLiteStore{db: db, encryptor: encryptor}, nil
+
+	return &PostgresStore{db: db, encryptor: encryptor}, nil
 }
 
-func (s *SQLiteStore) Migrate(ctx context.Context) error {
+func (s *PostgresStore) Migrate(ctx context.Context) error {
 	// Bootstrap schema_migrations table
 	_, err := s.db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version TEXT PRIMARY KEY,
-			applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`)
 	if err != nil {
 		return fmt.Errorf("create schema_migrations: %w", err)
 	}
 
-	entries, err := migrations.FS.ReadDir(".")
+	entries, err := pg_migrations.FS.ReadDir(".")
 	if err != nil {
 		return fmt.Errorf("read migrations dir: %w", err)
 	}
@@ -58,7 +65,7 @@ func (s *SQLiteStore) Migrate(ctx context.Context) error {
 		}
 
 		var count int
-		err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations WHERE version = ?", entry.Name()).Scan(&count)
+		err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations WHERE version = $1", entry.Name()).Scan(&count)
 		if err != nil {
 			return fmt.Errorf("check migration %s: %w", entry.Name(), err)
 		}
@@ -66,7 +73,7 @@ func (s *SQLiteStore) Migrate(ctx context.Context) error {
 			continue
 		}
 
-		sqlBytes, err := migrations.FS.ReadFile(entry.Name())
+		sqlBytes, err := pg_migrations.FS.ReadFile(entry.Name())
 		if err != nil {
 			return fmt.Errorf("read migration %s: %w", entry.Name(), err)
 		}
@@ -75,23 +82,23 @@ func (s *SQLiteStore) Migrate(ctx context.Context) error {
 			return fmt.Errorf("exec migration %s: %w", entry.Name(), err)
 		}
 
-		if _, err := s.db.ExecContext(ctx, "INSERT INTO schema_migrations (version) VALUES (?)", entry.Name()); err != nil {
+		if _, err := s.db.ExecContext(ctx, "INSERT INTO schema_migrations (version) VALUES ($1)", entry.Name()); err != nil {
 			return fmt.Errorf("record migration %s: %w", entry.Name(), err)
 		}
 
-		slog.Info("applied migration", "version", entry.Name(), "driver", "sqlite")
+		slog.Info("applied migration", "version", entry.Name(), "driver", "postgres")
 	}
 
 	return nil
 }
 
-func (s *SQLiteStore) Close() error {
+func (s *PostgresStore) Close() error {
 	return s.db.Close()
 }
 
 // --- Server Config ---
 
-func (s *SQLiteStore) GetServerConfig(ctx context.Context) (*domain.ServerConfig, error) {
+func (s *PostgresStore) GetServerConfig(ctx context.Context) (*domain.ServerConfig, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, private_key, public_key, listen_port, address, dns, mtu,
 		       post_up, post_down, endpoint,
@@ -121,7 +128,7 @@ func (s *SQLiteStore) GetServerConfig(ctx context.Context) (*domain.ServerConfig
 	return &cfg, nil
 }
 
-func (s *SQLiteStore) SaveServerConfig(ctx context.Context, cfg *domain.ServerConfig) error {
+func (s *PostgresStore) SaveServerConfig(ctx context.Context, cfg *domain.ServerConfig) error {
 	cfg.UpdatedAt = time.Now()
 
 	// Encrypt private key
@@ -132,20 +139,20 @@ func (s *SQLiteStore) SaveServerConfig(ctx context.Context, cfg *domain.ServerCo
 
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO server_config (id, private_key, public_key, listen_port, address, dns, mtu, post_up, post_down, endpoint, default_allowed_ips, default_dns, created_at, updated_at)
-		VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES ('default', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		ON CONFLICT(id) DO UPDATE SET
-			private_key = excluded.private_key,
-			public_key = excluded.public_key,
-			listen_port = excluded.listen_port,
-			address = excluded.address,
-			dns = excluded.dns,
-			mtu = excluded.mtu,
-			post_up = excluded.post_up,
-			post_down = excluded.post_down,
-			endpoint = excluded.endpoint,
-			default_allowed_ips = excluded.default_allowed_ips,
-			default_dns = excluded.default_dns,
-			updated_at = excluded.updated_at`,
+			private_key = EXCLUDED.private_key,
+			public_key = EXCLUDED.public_key,
+			listen_port = EXCLUDED.listen_port,
+			address = EXCLUDED.address,
+			dns = EXCLUDED.dns,
+			mtu = EXCLUDED.mtu,
+			post_up = EXCLUDED.post_up,
+			post_down = EXCLUDED.post_down,
+			endpoint = EXCLUDED.endpoint,
+			default_allowed_ips = EXCLUDED.default_allowed_ips,
+			default_dns = EXCLUDED.default_dns,
+			updated_at = EXCLUDED.updated_at`,
 		encPrivKey, cfg.PublicKey, cfg.ListenPort, cfg.Address, cfg.DNS,
 		cfg.MTU, cfg.PostUp, cfg.PostDown, cfg.Endpoint,
 		cfg.DefaultAllowedIPs, cfg.DefaultDNS, cfg.CreatedAt, cfg.UpdatedAt)
@@ -157,7 +164,7 @@ func (s *SQLiteStore) SaveServerConfig(ctx context.Context, cfg *domain.ServerCo
 
 // --- Peers ---
 
-func (s *SQLiteStore) ListPeers(ctx context.Context) ([]domain.Peer, error) {
+func (s *PostgresStore) ListPeers(ctx context.Context) ([]domain.Peer, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, name, private_key, public_key, preshared_key,
 		       allowed_ips, address, dns, persistent_keepalive, enabled,
@@ -193,12 +200,12 @@ func (s *SQLiteStore) ListPeers(ctx context.Context) ([]domain.Peer, error) {
 	return peers, rows.Err()
 }
 
-func (s *SQLiteStore) ListPeersByUser(ctx context.Context, userID string) ([]domain.Peer, error) {
+func (s *PostgresStore) ListPeersByUser(ctx context.Context, userID string) ([]domain.Peer, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, name, private_key, public_key, preshared_key,
 		       allowed_ips, address, dns, persistent_keepalive, enabled,
 		       COALESCE(created_by, ''), created_at, updated_at
-		FROM peers WHERE created_by = ? ORDER BY created_at DESC`, userID)
+		FROM peers WHERE created_by = $1 ORDER BY created_at DESC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list peers by user: %w", err)
 	}
@@ -228,12 +235,12 @@ func (s *SQLiteStore) ListPeersByUser(ctx context.Context, userID string) ([]dom
 	return peers, rows.Err()
 }
 
-func (s *SQLiteStore) GetPeer(ctx context.Context, id string) (*domain.Peer, error) {
+func (s *PostgresStore) GetPeer(ctx context.Context, id string) (*domain.Peer, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, name, private_key, public_key, preshared_key,
 		       allowed_ips, address, dns, persistent_keepalive, enabled,
 		       COALESCE(created_by, ''), created_at, updated_at
-		FROM peers WHERE id = ?`, id)
+		FROM peers WHERE id = $1`, id)
 
 	var p domain.Peer
 	err := row.Scan(&p.ID, &p.Name, &p.PrivateKey, &p.PublicKey,
@@ -260,7 +267,7 @@ func (s *SQLiteStore) GetPeer(ctx context.Context, id string) (*domain.Peer, err
 	return &p, nil
 }
 
-func (s *SQLiteStore) CreatePeer(ctx context.Context, p *domain.Peer) error {
+func (s *PostgresStore) CreatePeer(ctx context.Context, p *domain.Peer) error {
 	now := time.Now()
 	p.CreatedAt = now
 	p.UpdatedAt = now
@@ -279,7 +286,7 @@ func (s *SQLiteStore) CreatePeer(ctx context.Context, p *domain.Peer) error {
 		INSERT INTO peers (id, name, private_key, public_key, preshared_key,
 		                   allowed_ips, address, dns, persistent_keepalive, enabled, created_by,
 		                   created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
 		p.ID, p.Name, encPrivKey, p.PublicKey, encPSK,
 		p.AllowedIPs, p.Address, p.DNS, p.PersistentKeepalive, p.Enabled,
 		p.CreatedBy, p.CreatedAt, p.UpdatedAt)
@@ -289,12 +296,12 @@ func (s *SQLiteStore) CreatePeer(ctx context.Context, p *domain.Peer) error {
 	return nil
 }
 
-func (s *SQLiteStore) UpdatePeer(ctx context.Context, p *domain.Peer) error {
+func (s *PostgresStore) UpdatePeer(ctx context.Context, p *domain.Peer) error {
 	p.UpdatedAt = time.Now()
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE peers SET name = ?, allowed_ips = ?, dns = ?,
-		       persistent_keepalive = ?, enabled = ?, updated_at = ?
-		WHERE id = ?`,
+		UPDATE peers SET name = $1, allowed_ips = $2, dns = $3,
+		       persistent_keepalive = $4, enabled = $5, updated_at = $6
+		WHERE id = $7`,
 		p.Name, p.AllowedIPs, p.DNS,
 		p.PersistentKeepalive, p.Enabled, p.UpdatedAt, p.ID)
 	if err != nil {
@@ -303,8 +310,8 @@ func (s *SQLiteStore) UpdatePeer(ctx context.Context, p *domain.Peer) error {
 	return nil
 }
 
-func (s *SQLiteStore) DeletePeer(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM peers WHERE id = ?`, id)
+func (s *PostgresStore) DeletePeer(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM peers WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete peer: %w", err)
 	}
@@ -313,7 +320,7 @@ func (s *SQLiteStore) DeletePeer(ctx context.Context, id string) error {
 
 // --- Users ---
 
-func (s *SQLiteStore) ListUsers(ctx context.Context) ([]domain.User, error) {
+func (s *PostgresStore) ListUsers(ctx context.Context) ([]domain.User, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, username, password_hash, name, role, last_login, created_at
 		FROM users ORDER BY created_at`)
@@ -333,10 +340,10 @@ func (s *SQLiteStore) ListUsers(ctx context.Context) ([]domain.User, error) {
 	return users, rows.Err()
 }
 
-func (s *SQLiteStore) GetUser(ctx context.Context, id string) (*domain.User, error) {
+func (s *PostgresStore) GetUser(ctx context.Context, id string) (*domain.User, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, username, password_hash, name, role, last_login, created_at
-		FROM users WHERE id = ?`, id)
+		FROM users WHERE id = $1`, id)
 
 	var u domain.User
 	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.LastLogin, &u.CreatedAt)
@@ -349,10 +356,10 @@ func (s *SQLiteStore) GetUser(ctx context.Context, id string) (*domain.User, err
 	return &u, nil
 }
 
-func (s *SQLiteStore) GetUserByUsername(ctx context.Context, username string) (*domain.User, error) {
+func (s *PostgresStore) GetUserByUsername(ctx context.Context, username string) (*domain.User, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, username, password_hash, name, role, last_login, created_at
-		FROM users WHERE username = ?`, username)
+		FROM users WHERE username = $1`, username)
 
 	var u domain.User
 	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.LastLogin, &u.CreatedAt)
@@ -365,11 +372,11 @@ func (s *SQLiteStore) GetUserByUsername(ctx context.Context, username string) (*
 	return &u, nil
 }
 
-func (s *SQLiteStore) CreateUser(ctx context.Context, u *domain.User) error {
+func (s *PostgresStore) CreateUser(ctx context.Context, u *domain.User) error {
 	u.CreatedAt = time.Now()
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO users (id, username, password_hash, name, role, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
+		VALUES ($1, $2, $3, $4, $5, $6)`,
 		u.ID, u.Username, u.PasswordHash, u.Name, u.Role, u.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("create user: %w", err)
@@ -377,9 +384,9 @@ func (s *SQLiteStore) CreateUser(ctx context.Context, u *domain.User) error {
 	return nil
 }
 
-func (s *SQLiteStore) UpdateUser(ctx context.Context, u *domain.User) error {
+func (s *PostgresStore) UpdateUser(ctx context.Context, u *domain.User) error {
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE users SET username = ?, name = ?, role = ? WHERE id = ?`,
+		UPDATE users SET username = $1, name = $2, role = $3 WHERE id = $4`,
 		u.Username, u.Name, u.Role, u.ID)
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
@@ -387,16 +394,16 @@ func (s *SQLiteStore) UpdateUser(ctx context.Context, u *domain.User) error {
 	return nil
 }
 
-func (s *SQLiteStore) UpdateUserPassword(ctx context.Context, id string, passwordHash string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ?`, passwordHash, id)
+func (s *PostgresStore) UpdateUserPassword(ctx context.Context, id string, passwordHash string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash = $1 WHERE id = $2`, passwordHash, id)
 	if err != nil {
 		return fmt.Errorf("update user password: %w", err)
 	}
 	return nil
 }
 
-func (s *SQLiteStore) DeleteUser(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
+func (s *PostgresStore) DeleteUser(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete user: %w", err)
 	}
@@ -405,7 +412,7 @@ func (s *SQLiteStore) DeleteUser(ctx context.Context, id string) error {
 
 // --- Tunnels ---
 
-func (s *SQLiteStore) ListTunnels(ctx context.Context) ([]domain.Tunnel, error) {
+func (s *PostgresStore) ListTunnels(ctx context.Context) ([]domain.Tunnel, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, name, type, description, config, enabled, created_at, updated_at
 		FROM tunnels ORDER BY created_at DESC`)
@@ -426,10 +433,10 @@ func (s *SQLiteStore) ListTunnels(ctx context.Context) ([]domain.Tunnel, error) 
 	return tunnels, rows.Err()
 }
 
-func (s *SQLiteStore) GetTunnel(ctx context.Context, id string) (*domain.Tunnel, error) {
+func (s *PostgresStore) GetTunnel(ctx context.Context, id string) (*domain.Tunnel, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, name, type, description, config, enabled, created_at, updated_at
-		FROM tunnels WHERE id = ?`, id)
+		FROM tunnels WHERE id = $1`, id)
 
 	var t domain.Tunnel
 	err := row.Scan(&t.ID, &t.Name, &t.Type, &t.Description, &t.Config,
@@ -443,13 +450,13 @@ func (s *SQLiteStore) GetTunnel(ctx context.Context, id string) (*domain.Tunnel,
 	return &t, nil
 }
 
-func (s *SQLiteStore) CreateTunnel(ctx context.Context, t *domain.Tunnel) error {
+func (s *PostgresStore) CreateTunnel(ctx context.Context, t *domain.Tunnel) error {
 	now := time.Now()
 	t.CreatedAt = now
 	t.UpdatedAt = now
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO tunnels (id, name, type, description, config, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		t.ID, t.Name, t.Type, t.Description, t.Config, t.Enabled, t.CreatedAt, t.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("create tunnel: %w", err)
@@ -457,12 +464,12 @@ func (s *SQLiteStore) CreateTunnel(ctx context.Context, t *domain.Tunnel) error 
 	return nil
 }
 
-func (s *SQLiteStore) UpdateTunnel(ctx context.Context, t *domain.Tunnel) error {
+func (s *PostgresStore) UpdateTunnel(ctx context.Context, t *domain.Tunnel) error {
 	t.UpdatedAt = time.Now()
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE tunnels SET name = ?, type = ?, description = ?, config = ?,
-		       enabled = ?, updated_at = ?
-		WHERE id = ?`,
+		UPDATE tunnels SET name = $1, type = $2, description = $3, config = $4,
+		       enabled = $5, updated_at = $6
+		WHERE id = $7`,
 		t.Name, t.Type, t.Description, t.Config, t.Enabled, t.UpdatedAt, t.ID)
 	if err != nil {
 		return fmt.Errorf("update tunnel: %w", err)
@@ -470,10 +477,12 @@ func (s *SQLiteStore) UpdateTunnel(ctx context.Context, t *domain.Tunnel) error 
 	return nil
 }
 
-func (s *SQLiteStore) DeleteTunnel(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM tunnels WHERE id = ?`, id)
+func (s *PostgresStore) DeleteTunnel(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM tunnels WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete tunnel: %w", err)
 	}
 	return nil
 }
+
+var _ Store = (*PostgresStore)(nil)

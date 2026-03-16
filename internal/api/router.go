@@ -14,16 +14,14 @@ import (
 )
 
 type RouterConfig struct {
-	Store         database.Store
-	WG            wireguard.Manager
-	JWTManager    *auth.JWTManager
-	OIDCProvider  *auth.OIDCProvider
-	Monitor       *monitor.Monitor
-	FrontendFS    fs.FS
-	DevMode       bool
-	AdminUsername string
-	AdminPassword string
-	APIKey        string
+	Store        database.Store
+	WG           wireguard.Manager
+	JWTManager   *auth.JWTManager
+	OIDCProvider *auth.OIDCProvider
+	Monitor      *monitor.Monitor
+	FrontendFS   fs.FS
+	DevMode      bool
+	AdminAPIKey  string
 }
 
 func NewRouter(cfg RouterConfig) *chi.Mux {
@@ -43,11 +41,9 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 	}))
 
 	authHandler := NewAuthHandler(AuthHandlerConfig{
-		OIDC:          cfg.OIDCProvider,
-		JWT:           cfg.JWTManager,
-		Store:         cfg.Store,
-		AdminUsername: cfg.AdminUsername,
-		AdminPassword: cfg.AdminPassword,
+		OIDC:  cfg.OIDCProvider,
+		JWT:   cfg.JWTManager,
+		Store: cfg.Store,
 	})
 
 	// Health check (unauthenticated)
@@ -65,20 +61,20 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 	// Authenticated API routes
 	r.Group(func(r chi.Router) {
 		// API key middleware runs first — sets claims if valid key provided
-		if cfg.APIKey != "" {
-			r.Use(auth.APIKeyMiddleware(cfg.APIKey))
+		if cfg.AdminAPIKey != "" {
+			r.Use(auth.APIKeyMiddleware(cfg.AdminAPIKey))
 		}
 		r.Use(auth.Middleware(cfg.JWTManager))
 
 		r.Get("/auth/me", authHandler.HandleMe)
 
-		// Server config
+		// Server config (read: all authenticated, write: admin only)
 		serverHandler := NewServerHandler(cfg.Store, cfg.WG)
 		r.Get("/api/v1/server", serverHandler.HandleGet)
-		r.Put("/api/v1/server", serverHandler.HandleUpdate)
-		r.Post("/api/v1/server/apply", serverHandler.HandleApply)
+		r.With(RequireAdmin).Put("/api/v1/server", serverHandler.HandleUpdate)
+		r.With(RequireAdmin).Post("/api/v1/server/apply", serverHandler.HandleApply)
 
-		// Peers
+		// Peers (ownership enforced in handlers)
 		peerHandler := NewPeerHandler(cfg.Store, cfg.WG)
 		r.Get("/api/v1/peers", peerHandler.HandleList)
 		r.Post("/api/v1/peers", peerHandler.HandleCreate)
@@ -87,7 +83,7 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		r.Delete("/api/v1/peers/{id}", peerHandler.HandleDelete)
 		r.Patch("/api/v1/peers/{id}/toggle", peerHandler.HandleToggle)
 
-		// Export
+		// Export (ownership enforced in handlers)
 		exportHandler := NewExportHandler(cfg.Store)
 		r.Get("/api/v1/peers/{id}/config", exportHandler.HandleConfig)
 		r.Get("/api/v1/peers/{id}/qrcode", exportHandler.HandleQRCode)
@@ -96,6 +92,19 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		statsHandler := NewStatsHandler(cfg.Monitor)
 		r.Get("/api/v1/stats", statsHandler.HandleGet)
 		r.Get("/api/v1/stats/stream", statsHandler.HandleStream)
+
+		// Users (admin only, except password change)
+		userHandler := NewUserHandler(cfg.Store)
+		r.Post("/api/v1/me/password", userHandler.HandleChangePassword)
+		r.Route("/api/v1/users", func(r chi.Router) {
+			r.Use(RequireAdmin)
+			r.Get("/", userHandler.HandleList)
+			r.Post("/", userHandler.HandleCreate)
+			r.Get("/{id}", userHandler.HandleGet)
+			r.Put("/{id}", userHandler.HandleUpdate)
+			r.Delete("/{id}", userHandler.HandleDelete)
+			r.Post("/{id}/reset-password", userHandler.HandleResetPassword)
+		})
 	})
 
 	// Serve frontend SPA

@@ -9,6 +9,7 @@ export function formatBytes(bytes: number): string {
 export function formatTimeAgo(dateStr: string): string {
 	if (!dateStr) return 'Never';
 	const date = new Date(dateStr);
+	if (isNaN(date.getTime()) || date.getFullYear() < 2000) return 'Never';
 	const now = new Date();
 	const diffMs = now.getTime() - date.getTime();
 	const diffSec = Math.floor(diffMs / 1000);

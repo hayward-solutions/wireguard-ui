@@ -2,7 +2,6 @@ package api
 
 import (
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
@@ -12,31 +11,26 @@ import (
 	"github.com/hayward-solutions/wireguard-ui/internal/auth"
 	"github.com/hayward-solutions/wireguard-ui/internal/database"
 	"github.com/hayward-solutions/wireguard-ui/internal/domain"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type AuthHandler struct {
-	oidc          *auth.OIDCProvider
-	jwt           *auth.JWTManager
-	store         database.Store
-	adminUsername string
-	adminPassword string
+	oidc  *auth.OIDCProvider
+	jwt   *auth.JWTManager
+	store database.Store
 }
 
 type AuthHandlerConfig struct {
-	OIDC          *auth.OIDCProvider
-	JWT           *auth.JWTManager
-	Store         database.Store
-	AdminUsername string
-	AdminPassword string
+	OIDC  *auth.OIDCProvider
+	JWT   *auth.JWTManager
+	Store database.Store
 }
 
 func NewAuthHandler(cfg AuthHandlerConfig) *AuthHandler {
 	return &AuthHandler{
-		oidc:          cfg.OIDC,
-		jwt:           cfg.JWT,
-		store:         cfg.Store,
-		adminUsername: cfg.AdminUsername,
-		adminPassword: cfg.AdminPassword,
+		oidc:  cfg.OIDC,
+		jwt:   cfg.JWT,
+		store: cfg.Store,
 	}
 }
 
@@ -67,7 +61,7 @@ func (h *AuthHandler) HandleLoginPage(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusBadRequest, "NO_OIDC", "use POST /auth/login with username and password")
 }
 
-// HandleLocalLogin handles username/password authentication.
+// HandleLocalLogin handles username/password authentication against DB users.
 func (h *AuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username string `json:"username"`
@@ -78,39 +72,18 @@ func (h *AuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.adminPassword == "" {
-		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "local auth not configured")
-		return
-	}
-
-	usernameMatch := subtle.ConstantTimeCompare([]byte(req.Username), []byte(h.adminUsername)) == 1
-	passwordMatch := subtle.ConstantTimeCompare([]byte(req.Password), []byte(h.adminPassword)) == 1
-	if !usernameMatch || !passwordMatch {
+	user, err := h.store.GetUserByUsername(r.Context(), req.Username)
+	if err != nil || user == nil {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid credentials")
 		return
 	}
 
-	// Upsert admin user
-	now := time.Now()
-	user := &domain.User{
-		ID:        "local:" + req.Username,
-		Email:     req.Username + "@local",
-		Name:      req.Username,
-		Role:      domain.RoleAdmin,
-		LastLogin: now,
-		CreatedAt: now,
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid credentials")
+		return
 	}
 
-	existing, _ := h.store.GetUser(r.Context(), user.ID)
-	if existing != nil {
-		user.CreatedAt = existing.CreatedAt
-	}
-
-	if err := h.store.UpsertUser(r.Context(), user); err != nil {
-		slog.Error("upsert user failed", "error", err)
-	}
-
-	token, err := h.jwt.Issue(user.ID, user.Email, user.Name, user.Role)
+	token, err := h.jwt.Issue(user.ID, user.Username, user.Name, user.Role)
 	if err != nil {
 		slog.Error("jwt issue failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to issue token")
@@ -129,10 +102,10 @@ func (h *AuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"token": token,
 		"user": map[string]string{
-			"id":    user.ID,
-			"email": user.Email,
-			"name":  user.Name,
-			"role":  user.Role,
+			"id":       user.ID,
+			"username": user.Username,
+			"name":     user.Name,
+			"role":     user.Role,
 		},
 	})
 }
@@ -140,8 +113,8 @@ func (h *AuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
 // HandleAuthInfo returns what auth methods are available.
 func (h *AuthHandler) HandleAuthInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"oidc_enabled": h.oidc != nil,
-		"local_enabled": h.adminPassword != "",
+		"oidc_enabled":  h.oidc != nil,
+		"local_enabled": true,
 	})
 }
 
@@ -178,29 +151,28 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := time.Now()
-	user := &domain.User{
-		ID:        oidcUser.Subject,
-		Email:     oidcUser.Email,
-		Name:      oidcUser.Name,
-		Role:      domain.RoleAdmin,
-		LastLogin: now,
-		CreatedAt: now,
-	}
-
+	// Look up or create the OIDC user
 	existing, _ := h.store.GetUser(r.Context(), oidcUser.Subject)
+	var user *domain.User
 	if existing != nil {
-		user.Role = existing.Role
-		user.CreatedAt = existing.CreatedAt
+		user = existing
+	} else {
+		now := time.Now()
+		user = &domain.User{
+			ID:        oidcUser.Subject,
+			Username:  oidcUser.Email,
+			Name:      oidcUser.Name,
+			Role:      domain.RoleAdmin,
+			CreatedAt: now,
+		}
+		if err := h.store.CreateUser(r.Context(), user); err != nil {
+			slog.Error("create oidc user failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to save user")
+			return
+		}
 	}
 
-	if err := h.store.UpsertUser(r.Context(), user); err != nil {
-		slog.Error("upsert user failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to save user")
-		return
-	}
-
-	token, err := h.jwt.Issue(user.ID, user.Email, user.Name, user.Role)
+	token, err := h.jwt.Issue(user.ID, user.Username, user.Name, user.Role)
 	if err != nil {
 		slog.Error("jwt issue failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to issue token")

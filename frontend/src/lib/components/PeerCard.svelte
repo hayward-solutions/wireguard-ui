@@ -2,6 +2,7 @@
 	import type { Peer, PeerStats } from '$lib/api';
 	import { api } from '$lib/api';
 	import { togglePeer, deletePeer } from '$lib/stores/peers';
+	import { user } from '$lib/stores/auth';
 	import { formatBytes, formatTimeAgo } from '$lib/format';
 	import { Download, QrCode, Power, Trash2, ArrowUpDown } from 'lucide-svelte';
 
@@ -32,8 +33,8 @@
 			></div>
 			<div>
 				<h3 class="font-semibold text-zinc-900">{peer.name}</h3>
-				{#if peer.email}
-					<p class="text-sm text-zinc-500">{peer.email}</p>
+				{#if $user?.role === 'admin' && peer.created_by_name}
+					<p class="text-xs text-zinc-400">{peer.created_by_name}</p>
 				{/if}
 			</div>
 		</div>

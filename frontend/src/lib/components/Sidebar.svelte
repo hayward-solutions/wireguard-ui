@@ -1,13 +1,20 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { LayoutDashboard, Users, Server, LogOut } from 'lucide-svelte';
-	import { logout } from '$lib/stores/auth';
+	import { LayoutDashboard, Users, Server, ShieldCheck, LogOut } from 'lucide-svelte';
+	import { logout, user } from '$lib/stores/auth';
+	import { get } from 'svelte/store';
 
-	const links = [
+	const baseLinks = [
 		{ href: '/', label: 'Dashboard', icon: LayoutDashboard },
 		{ href: '/peers', label: 'Peers', icon: Users },
 		{ href: '/server', label: 'Server', icon: Server }
 	];
+
+	const links = $derived(
+		get(user)?.role === 'admin'
+			? [...baseLinks, { href: '/users', label: 'Users', icon: ShieldCheck }]
+			: baseLinks
+	);
 </script>
 
 <aside class="flex h-full w-64 flex-col border-r border-zinc-200 bg-white">

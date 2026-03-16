@@ -39,8 +39,12 @@ func AllocateIP(subnet string, usedAddresses []string) (string, error) {
 			continue
 		}
 		if !used[ip.String()] {
-			ones, _ := network.Mask.Size()
-			return fmt.Sprintf("%s/%d", ip.String(), ones), nil
+			// Peers get a single-host address: /32 for IPv4, /128 for IPv6
+			bits := 32
+			if ip.To4() == nil {
+				bits = 128
+			}
+			return fmt.Sprintf("%s/%d", ip.String(), bits), nil
 		}
 	}
 

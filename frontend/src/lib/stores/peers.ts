@@ -16,8 +16,8 @@ export async function loadPeers() {
 	}
 }
 
-export async function createPeer(name: string, email?: string) {
-	const peer = await api.createPeer({ name, email });
+export async function createPeer(name: string, allowed_ips?: string, dns?: string) {
+	const peer = await api.createPeer({ name, allowed_ips, dns });
 	peers.update((p) => [peer, ...p]);
 	return peer;
 }

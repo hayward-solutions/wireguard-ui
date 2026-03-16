@@ -9,8 +9,8 @@ CREATE TABLE IF NOT EXISTS server_config (
     post_up     TEXT DEFAULT '',
     post_down   TEXT DEFAULT '',
     endpoint    TEXT NOT NULL,
-    created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -19,8 +19,8 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT DEFAULT '',
     name          TEXT DEFAULT '',
     role          TEXT NOT NULL DEFAULT 'viewer',
-    last_login    TIMESTAMP,
-    created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    last_login    TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS peers (
@@ -33,10 +33,10 @@ CREATE TABLE IF NOT EXISTS peers (
     address              TEXT NOT NULL,
     dns                  TEXT DEFAULT '',
     persistent_keepalive INTEGER DEFAULT 25,
-    enabled              INTEGER NOT NULL DEFAULT 1,
+    enabled              BOOLEAN NOT NULL DEFAULT TRUE,
     created_by           TEXT DEFAULT '',
-    created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS tunnels (
@@ -45,9 +45,9 @@ CREATE TABLE IF NOT EXISTS tunnels (
     type        TEXT NOT NULL CHECK (type IN ('site-to-site', 'point-to-site')),
     description TEXT DEFAULT '',
     config      TEXT NOT NULL DEFAULT '{}',
-    enabled     INTEGER NOT NULL DEFAULT 1,
-    created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS tunnel_peers (

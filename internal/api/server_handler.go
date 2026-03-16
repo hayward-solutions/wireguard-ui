@@ -35,13 +35,15 @@ func (h *ServerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 
 func (h *ServerHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	var update struct {
-		ListenPort int    `json:"listen_port"`
-		Address    string `json:"address"`
-		DNS        string `json:"dns"`
-		MTU        int    `json:"mtu"`
-		PostUp     string `json:"post_up"`
-		PostDown   string `json:"post_down"`
-		Endpoint   string `json:"endpoint"`
+		ListenPort        int     `json:"listen_port"`
+		Address           string  `json:"address"`
+		DNS               string  `json:"dns"`
+		MTU               int     `json:"mtu"`
+		PostUp            string  `json:"post_up"`
+		PostDown          string  `json:"post_down"`
+		Endpoint          string  `json:"endpoint"`
+		DefaultAllowedIPs *string `json:"default_allowed_ips"`
+		DefaultDNS        *string `json:"default_dns"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
@@ -70,6 +72,12 @@ func (h *ServerHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	cfg.PostDown = update.PostDown
 	if update.Endpoint != "" {
 		cfg.Endpoint = update.Endpoint
+	}
+	if update.DefaultAllowedIPs != nil {
+		cfg.DefaultAllowedIPs = *update.DefaultAllowedIPs
+	}
+	if update.DefaultDNS != nil {
+		cfg.DefaultDNS = *update.DefaultDNS
 	}
 
 	if err := h.store.SaveServerConfig(r.Context(), cfg); err != nil {

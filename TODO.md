@@ -2,11 +2,11 @@
 
 ## Core Infrastructure
 
-- [ ] Implement real wgctrl Manager (replace MockManager with actual WireGuard interface management)
-- [ ] Integrate wireguard-go as library for userspace networking (ECS Fargate support)
-- [ ] PostgreSQL Store implementation with connection pooling
-- [ ] Encrypt peer private keys at rest (AES-GCM via `ENCRYPTION_KEY`)
-- [ ] Database migration versioning (track applied migrations, support incremental upgrades)
+- [x] Implement real wgctrl Manager (replace MockManager with actual WireGuard interface management)
+- [x] Integrate wireguard-go as library for userspace networking (ECS Fargate support)
+- [x] PostgreSQL Store implementation with connection pooling
+- [x] Encrypt peer private keys at rest (AES-GCM via `ENCRYPTION_KEY`)
+- [x] Database migration versioning (track applied migrations, support incremental upgrades)
 
 ## Auth & Security
 

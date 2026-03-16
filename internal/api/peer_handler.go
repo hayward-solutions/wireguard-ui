@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hayward-solutions/wireguard-ui/internal/auth"
 	"github.com/hayward-solutions/wireguard-ui/internal/database"
@@ -23,7 +22,24 @@ func NewPeerHandler(store database.Store, wg wireguard.Manager) *PeerHandler {
 }
 
 func (h *PeerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
-	peers, err := h.store.ListPeers(r.Context())
+	claims := auth.ClaimsFromContext(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing credentials")
+		return
+	}
+
+	var peers []domain.Peer
+	var err error
+
+	if claims.Role == domain.RoleAdmin {
+		peers, err = h.store.ListPeers(r.Context())
+		if err == nil {
+			h.resolveOwnerNames(r, peers)
+		}
+	} else {
+		peers, err = h.store.ListPeersByUser(r.Context(), claims.Subject)
+	}
+
 	if err != nil {
 		slog.Error("list peers", "error", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list peers")
@@ -35,16 +51,36 @@ func (h *PeerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, peers)
 }
 
-func (h *PeerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	peer, err := h.store.GetPeer(r.Context(), id)
-	if err != nil {
-		slog.Error("get peer", "error", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to get peer")
-		return
+// resolveOwnerNames populates CreatedByName for each peer by looking up user records.
+func (h *PeerHandler) resolveOwnerNames(r *http.Request, peers []domain.Peer) {
+	nameMap := make(map[string]string)
+	for _, p := range peers {
+		if p.CreatedBy != "" {
+			if _, ok := nameMap[p.CreatedBy]; !ok {
+				nameMap[p.CreatedBy] = "" // mark for lookup
+			}
+		}
 	}
+	for uid := range nameMap {
+		u, err := h.store.GetUser(r.Context(), uid)
+		if err == nil && u != nil {
+			name := u.Name
+			if name == "" {
+				name = u.Username
+			}
+			nameMap[uid] = name
+		}
+	}
+	for i := range peers {
+		if name, ok := nameMap[peers[i].CreatedBy]; ok {
+			peers[i].CreatedByName = name
+		}
+	}
+}
+
+func (h *PeerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
+	peer, _ := requirePeerAccess(h.store, w, r)
 	if peer == nil {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "peer not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, peer)
@@ -52,11 +88,10 @@ func (h *PeerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 
 func (h *PeerHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name               string `json:"name"`
-		Email              string `json:"email"`
-		AllowedIPs         string `json:"allowed_ips"`
-		DNS                string `json:"dns"`
-		PersistentKeepalive int   `json:"persistent_keepalive"`
+		Name                string `json:"name"`
+		AllowedIPs          string `json:"allowed_ips"`
+		DNS                 string `json:"dns"`
+		PersistentKeepalive int    `json:"persistent_keepalive"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
@@ -83,7 +118,7 @@ func (h *PeerHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Allocate IP
+	// Allocate IP — must use ListPeers (all) to avoid IP collisions
 	serverCfg, err := h.store.GetServerConfig(r.Context())
 	if err != nil || serverCfg == nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "server not configured")
@@ -110,7 +145,15 @@ func (h *PeerHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 	allowedIPs := req.AllowedIPs
 	if allowedIPs == "" {
+		allowedIPs = serverCfg.DefaultAllowedIPs
+	}
+	if allowedIPs == "" {
 		allowedIPs = "0.0.0.0/0, ::/0"
+	}
+
+	dns := req.DNS
+	if dns == "" {
+		dns = serverCfg.DefaultDNS
 	}
 
 	keepalive := req.PersistentKeepalive
@@ -127,13 +170,12 @@ func (h *PeerHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	peer := &domain.Peer{
 		ID:                  uuid.New().String(),
 		Name:                req.Name,
-		Email:               req.Email,
 		PrivateKey:          keyPair.PrivateKey,
 		PublicKey:           keyPair.PublicKey,
 		PresharedKey:        psk,
 		AllowedIPs:          allowedIPs,
 		Address:             address,
-		DNS:                 req.DNS,
+		DNS:                 dns,
 		PersistentKeepalive: keepalive,
 		Enabled:             true,
 		CreatedBy:           createdBy,
@@ -155,16 +197,13 @@ func (h *PeerHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PeerHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	peer, err := h.store.GetPeer(r.Context(), id)
-	if err != nil || peer == nil {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "peer not found")
+	peer, _ := requirePeerAccess(h.store, w, r)
+	if peer == nil {
 		return
 	}
 
 	var req struct {
 		Name                string `json:"name"`
-		Email               string `json:"email"`
 		AllowedIPs          string `json:"allowed_ips"`
 		DNS                 string `json:"dns"`
 		PersistentKeepalive *int   `json:"persistent_keepalive"`
@@ -176,9 +215,6 @@ func (h *PeerHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 
 	if req.Name != "" {
 		peer.Name = req.Name
-	}
-	if req.Email != "" {
-		peer.Email = req.Email
 	}
 	if req.AllowedIPs != "" {
 		peer.AllowedIPs = req.AllowedIPs
@@ -200,10 +236,8 @@ func (h *PeerHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PeerHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	peer, err := h.store.GetPeer(r.Context(), id)
-	if err != nil || peer == nil {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "peer not found")
+	peer, _ := requirePeerAccess(h.store, w, r)
+	if peer == nil {
 		return
 	}
 
@@ -212,7 +246,7 @@ func (h *PeerHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		slog.Error("remove peer from wg", "error", err)
 	}
 
-	if err := h.store.DeletePeer(r.Context(), id); err != nil {
+	if err := h.store.DeletePeer(r.Context(), peer.ID); err != nil {
 		slog.Error("delete peer", "error", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to delete peer")
 		return
@@ -222,10 +256,8 @@ func (h *PeerHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PeerHandler) HandleToggle(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	peer, err := h.store.GetPeer(r.Context(), id)
-	if err != nil || peer == nil {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "peer not found")
+	peer, _ := requirePeerAccess(h.store, w, r)
+	if peer == nil {
 		return
 	}
 

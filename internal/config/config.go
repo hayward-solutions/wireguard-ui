@@ -28,19 +28,20 @@ type Config struct {
 	JWTExpiry time.Duration
 
 	// WireGuard
-	WGInterfaceName string
-	WGListenPort    int
-	WGAddress       string
-	WGEndpoint      string
-	WGDNS           string
-	WGMTU           int
-	WGUserspaceMode bool
-	WGMockMode      bool
+	WGInterfaceName      string
+	WGListenPort         int
+	WGAddress            string
+	WGEndpoint           string
+	WGDNS                string
+	WGMTU                int
+	WGDefaultAllowedIPs  string
+	WGUserspaceMode      bool
+	WGMockMode           bool
 
 	// Local Auth
 	AdminUsername string
 	AdminPassword string
-	APIKey        string
+	AdminAPIKey   string
 
 	// Encryption
 	EncryptionKey string
@@ -73,9 +74,10 @@ func Load() (*Config, error) {
 		WGAddress:       envOrDefault("WG_ADDRESS", "10.0.0.1/24"),
 		WGEndpoint:      os.Getenv("WG_ENDPOINT"),
 		WGDNS:           envOrDefault("WG_DNS", "1.1.1.1,8.8.8.8"),
-		AdminUsername:   envOrDefault("ADMIN_USERNAME", "admin"),
+		WGDefaultAllowedIPs: envOrDefault("WG_DEFAULT_ALLOWED_IPS", "0.0.0.0/0, ::/0"),
+		AdminUsername:        envOrDefault("ADMIN_USERNAME", "admin"),
 		AdminPassword:   os.Getenv("ADMIN_PASSWORD"),
-		APIKey:          os.Getenv("API_KEY"),
+		AdminAPIKey:     os.Getenv("ADMIN_API_KEY"),
 		EncryptionKey:   os.Getenv("ENCRYPTION_KEY"),
 		DevMode:         envOrDefault("DEV_MODE", "false") == "true",
 	}

@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/hayward-solutions/wireguard-ui/internal/database"
 	"github.com/hayward-solutions/wireguard-ui/internal/wireguard"
 )
@@ -19,11 +18,8 @@ func NewExportHandler(store database.Store) *ExportHandler {
 }
 
 func (h *ExportHandler) HandleConfig(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-
-	peer, err := h.store.GetPeer(r.Context(), id)
-	if err != nil || peer == nil {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "peer not found")
+	peer, _ := requirePeerAccess(h.store, w, r)
+	if peer == nil {
 		return
 	}
 
@@ -46,11 +42,8 @@ func (h *ExportHandler) HandleConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ExportHandler) HandleQRCode(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-
-	peer, err := h.store.GetPeer(r.Context(), id)
-	if err != nil || peer == nil {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "peer not found")
+	peer, _ := requirePeerAccess(h.store, w, r)
+	if peer == nil {
 		return
 	}
 

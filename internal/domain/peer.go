@@ -5,7 +5,6 @@ import "time"
 type Peer struct {
 	ID                 string    `json:"id"`
 	Name               string    `json:"name"`
-	Email              string    `json:"email"`
 	PrivateKey         string    `json:"-"`
 	PublicKey          string    `json:"public_key"`
 	PresharedKey       string    `json:"-"`
@@ -15,6 +14,7 @@ type Peer struct {
 	PersistentKeepalive int      `json:"persistent_keepalive"`
 	Enabled            bool      `json:"enabled"`
 	CreatedBy          string    `json:"created_by"`
+	CreatedByName      string    `json:"created_by_name,omitempty"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
 }
