@@ -1,0 +1,191 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { api, type ServerConfig } from '$lib/api';
+	import { Copy, Check, RefreshCw } from 'lucide-svelte';
+
+	let config = $state<ServerConfig | null>(null);
+	let saving = $state(false);
+	let applying = $state(false);
+	let error = $state('');
+	let success = $state('');
+	let copiedKey = $state(false);
+
+	onMount(async () => {
+		try {
+			config = await api.getServer();
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load config';
+		}
+	});
+
+	async function handleSave(e: Event) {
+		e.preventDefault();
+		if (!config) return;
+		saving = true;
+		error = '';
+		success = '';
+		try {
+			config = await api.updateServer(config);
+			success = 'Configuration saved';
+			setTimeout(() => (success = ''), 3000);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to save';
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function handleApply() {
+		applying = true;
+		error = '';
+		try {
+			await api.applyServer();
+			success = 'Configuration applied to WireGuard interface';
+			setTimeout(() => (success = ''), 3000);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to apply';
+		} finally {
+			applying = false;
+		}
+	}
+
+	function copyPublicKey() {
+		if (config?.public_key) {
+			navigator.clipboard.writeText(config.public_key);
+			copiedKey = true;
+			setTimeout(() => (copiedKey = false), 2000);
+		}
+	}
+</script>
+
+<div>
+	<h1 class="text-2xl font-bold text-zinc-900">Server Configuration</h1>
+	<p class="mt-1 text-zinc-500">Manage your WireGuard server settings</p>
+
+	{#if config}
+		<div class="mt-8 rounded-xl border border-zinc-200 bg-white p-6">
+			<div class="mb-6">
+				<label class="block text-sm font-medium text-zinc-700">Public Key</label>
+				<div class="mt-1 flex items-center gap-2">
+					<code class="flex-1 rounded-lg bg-zinc-50 px-3 py-2 font-mono text-sm text-zinc-700">
+						{config.public_key}
+					</code>
+					<button
+						onclick={copyPublicKey}
+						class="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+					>
+						{#if copiedKey}
+							<Check size={16} class="text-emerald-500" />
+						{:else}
+							<Copy size={16} />
+						{/if}
+					</button>
+				</div>
+			</div>
+
+			<form onsubmit={handleSave} class="space-y-5">
+				<div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+					<div>
+						<label for="endpoint" class="block text-sm font-medium text-zinc-700">Endpoint</label>
+						<input
+							id="endpoint"
+							type="text"
+							bind:value={config.endpoint}
+							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+						/>
+					</div>
+					<div>
+						<label for="listen_port" class="block text-sm font-medium text-zinc-700">Listen Port</label>
+						<input
+							id="listen_port"
+							type="number"
+							bind:value={config.listen_port}
+							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+						/>
+					</div>
+					<div>
+						<label for="address" class="block text-sm font-medium text-zinc-700">Address (CIDR)</label>
+						<input
+							id="address"
+							type="text"
+							bind:value={config.address}
+							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+						/>
+					</div>
+					<div>
+						<label for="dns" class="block text-sm font-medium text-zinc-700">DNS</label>
+						<input
+							id="dns"
+							type="text"
+							bind:value={config.dns}
+							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+						/>
+					</div>
+					<div>
+						<label for="mtu" class="block text-sm font-medium text-zinc-700">MTU</label>
+						<input
+							id="mtu"
+							type="number"
+							bind:value={config.mtu}
+							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+						/>
+					</div>
+				</div>
+
+				<div>
+					<label for="post_up" class="block text-sm font-medium text-zinc-700">Post Up</label>
+					<input
+						id="post_up"
+						type="text"
+						bind:value={config.post_up}
+						placeholder="iptables -A FORWARD ..."
+						class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+					/>
+				</div>
+
+				<div>
+					<label for="post_down" class="block text-sm font-medium text-zinc-700">Post Down</label>
+					<input
+						id="post_down"
+						type="text"
+						bind:value={config.post_down}
+						placeholder="iptables -D FORWARD ..."
+						class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+					/>
+				</div>
+
+				{#if error}
+					<p class="text-sm text-red-600">{error}</p>
+				{/if}
+				{#if success}
+					<p class="text-sm text-emerald-600">{success}</p>
+				{/if}
+
+				<div class="flex justify-end gap-3">
+					<button
+						type="button"
+						onclick={handleApply}
+						disabled={applying}
+						class="inline-flex items-center gap-2 rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+					>
+						<RefreshCw size={16} class={applying ? 'animate-spin' : ''} />
+						{applying ? 'Applying...' : 'Apply to Interface'}
+					</button>
+					<button
+						type="submit"
+						disabled={saving}
+						class="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+					>
+						{saving ? 'Saving...' : 'Save'}
+					</button>
+				</div>
+			</form>
+		</div>
+	{:else if error}
+		<div class="mt-8 rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">{error}</div>
+	{:else}
+		<div class="mt-8 flex justify-center py-12">
+			<div class="h-8 w-8 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900"></div>
+		</div>
+	{/if}
+</div>

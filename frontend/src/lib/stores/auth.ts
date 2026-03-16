@@ -1,0 +1,38 @@
+import { writable } from 'svelte/store';
+
+interface User {
+	id: string;
+	email: string;
+	name: string;
+	role: string;
+}
+
+export const user = writable<User | null>(null);
+export const loading = writable(true);
+
+export async function checkAuth() {
+	loading.set(true);
+	try {
+		// Use raw fetch — don't go through api.request() which auto-redirects on 401
+		const res = await fetch('/auth/me', { credentials: 'include' });
+		if (res.ok) {
+			const json = await res.json();
+			user.set(json.data);
+		} else {
+			user.set(null);
+		}
+	} catch {
+		user.set(null);
+	} finally {
+		loading.set(false);
+	}
+}
+
+export async function logout() {
+	try {
+		await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
+	} finally {
+		user.set(null);
+		window.location.href = '/login';
+	}
+}
