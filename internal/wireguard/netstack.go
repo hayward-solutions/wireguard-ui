@@ -101,8 +101,9 @@ func (m *NetstackManager) Start(cfg *domain.ServerConfig) error {
 		m.gvStack.AddRoute(tcpip.Route{Destination: header.IPv6EmptySubnet, NIC: 1})
 	}
 
-	// Register TCP/UDP forwarders before creating the WireGuard device
-	m.forwarder = startForwarder(m.gvStack)
+	// Register TCP/UDP forwarders before creating the WireGuard device.
+	// Pass the local VPN address so traffic to our own IP is rewritten to 127.0.0.1.
+	m.forwarder = startForwarder(m.gvStack, localAddr.String())
 
 	// Create the netTun-compatible tun.Device backed by the channel endpoint
 	tunDev := &netstackTun{

@@ -24,16 +24,18 @@ const (
 
 // netstackForwarder forwards TCP and UDP traffic from a gVisor stack to the host network.
 type netstackForwarder struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	ctx       context.Context
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+	localAddr string // the server's VPN address (e.g., "10.0.0.1")
 }
 
 // startForwarder registers TCP and UDP forwarding handlers on the gVisor stack
 // and returns a forwarder that can be stopped.
-func startForwarder(s *stack.Stack) *netstackForwarder {
+// localAddr is the server's VPN IP — traffic to this address is rewritten to 127.0.0.1.
+func startForwarder(s *stack.Stack, localAddr string) *netstackForwarder {
 	ctx, cancel := context.WithCancel(context.Background())
-	f := &netstackForwarder{ctx: ctx, cancel: cancel}
+	f := &netstackForwarder{ctx: ctx, cancel: cancel, localAddr: localAddr}
 
 	// TCP forwarder: intercept all incoming TCP connections and proxy to host network.
 	tcpFwd := tcp.NewForwarder(s, 0, 65535, func(r *tcp.ForwarderRequest) {
@@ -55,9 +57,19 @@ func (f *netstackForwarder) stop() {
 	f.wg.Wait()
 }
 
+// resolveHostAddr rewrites the destination address so that traffic destined for the
+// server's own VPN IP is sent to 127.0.0.1 instead (the VPN IP only exists in gVisor).
+func (f *netstackForwarder) resolveHostAddr(gvisorIP string, port int) string {
+	host := gvisorIP
+	if host == f.localAddr {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port))
+}
+
 func (f *netstackForwarder) handleTCP(r *tcp.ForwarderRequest) {
 	id := r.ID()
-	dstAddr := net.JoinHostPort(id.LocalAddress.String(), strconv.Itoa(int(id.LocalPort)))
+	dstAddr := f.resolveHostAddr(id.LocalAddress.String(), int(id.LocalPort))
 
 	// Dial the real destination on the host network.
 	outConn, err := net.DialTimeout("tcp", dstAddr, tcpDialTimeout)
@@ -103,7 +115,7 @@ func relay(a, b net.Conn) {
 
 func (f *netstackForwarder) handleUDP(r *udp.ForwarderRequest) {
 	id := r.ID()
-	dstAddr := net.JoinHostPort(id.LocalAddress.String(), strconv.Itoa(int(id.LocalPort)))
+	dstAddr := f.resolveHostAddr(id.LocalAddress.String(), int(id.LocalPort))
 
 	// Create gVisor-side UDP endpoint.
 	var wq waiter.Queue

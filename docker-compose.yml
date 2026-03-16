@@ -39,10 +39,7 @@ services:
   # Fargate-compatible profile: no NET_ADMIN, no TUN device, no sysctls.
   # Uses gVisor netstack for fully userspace networking.
   wireguard-ui-fargate:
-    build:
-      context: .
-      args:
-        FARGATE: "true"
+    build: .
     ports:
       - "8080:8080"
       - "51820:51820/udp"
