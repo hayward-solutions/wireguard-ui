@@ -36,5 +36,34 @@ services:
       - /dev/net/tun:/dev/net/tun
     restart: unless-stopped
 
+  # Fargate-compatible profile: no NET_ADMIN, no TUN device, no sysctls.
+  # Uses gVisor netstack for fully userspace networking.
+  wireguard-ui-fargate:
+    build:
+      context: .
+      args:
+        FARGATE: "true"
+    ports:
+      - "8080:8080"
+      - "51820:51820/udp"
+    environment:
+      - DATABASE_DRIVER=sqlite
+      - DATABASE_DSN=/data/wireguard.db
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme}
+      - JWT_SECRET=${JWT_SECRET:-changeme}
+      - WG_ENDPOINT=${WG_ENDPOINT:-localhost:51820}
+      - WG_ADDRESS=${WG_ADDRESS:-10.0.0.1/24}
+      - WG_LISTEN_PORT=${WG_LISTEN_PORT:-51820}
+      - WG_DNS=${WG_DNS:-1.1.1.1,8.8.8.8}
+      - WG_DEFAULT_ALLOWED_IPS=${WG_DEFAULT_ALLOWED_IPS:-0.0.0.0/0, ::/0}
+      - WG_NETSTACK_MODE=true
+      - WG_USERSPACE_MODE=false
+    volumes:
+      - wireguard-data:/data
+    profiles:
+      - fargate
+    restart: unless-stopped
+
 volumes:
   wireguard-data:

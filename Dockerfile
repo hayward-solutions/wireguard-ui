@@ -17,8 +17,15 @@ COPY --from=frontend-builder /app/frontend/build ./frontend/build
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /wireguard-ui ./cmd/server
 
 # Stage 3: Runtime
+# Set FARGATE=true to build a minimal image without iptables/wireguard-tools
+# for environments that don't support NET_ADMIN (e.g., AWS Fargate with WG_NETSTACK_MODE=true).
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates iptables ip6tables wireguard-tools
+ARG FARGATE=false
+RUN if [ "$FARGATE" = "true" ]; then \
+      apk add --no-cache ca-certificates; \
+    else \
+      apk add --no-cache ca-certificates iptables ip6tables wireguard-tools; \
+    fi
 COPY --from=backend-builder /wireguard-ui /usr/local/bin/wireguard-ui
 RUN mkdir -p /data
 EXPOSE 8080 51820/udp

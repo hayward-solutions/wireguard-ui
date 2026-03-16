@@ -80,6 +80,8 @@ func run() error {
 	var wg wireguard.Manager
 	if cfg.WGMockMode {
 		wg = wireguard.NewMockManager()
+	} else if cfg.WGNetstackMode {
+		wg = wireguard.NewNetstackManager()
 	} else if cfg.WGUserspaceMode {
 		wg, err = wireguard.NewUserspaceManager(cfg.WGInterfaceName)
 		if err != nil {
@@ -105,12 +107,16 @@ func run() error {
 		}
 
 		// Build default PostUp/PostDown for NAT masquerade.
-		// eth+ matches any ethN interface (Docker, ECS, etc.).
-		wgIface := cfg.WGInterfaceName
-		postUp := fmt.Sprintf("iptables -t nat -A POSTROUTING -s %s -o eth+ -j MASQUERADE; iptables -A FORWARD -i %s -j ACCEPT; iptables -A FORWARD -o %s -j ACCEPT",
-			cfg.WGAddress, wgIface, wgIface)
-		postDown := fmt.Sprintf("iptables -t nat -D POSTROUTING -s %s -o eth+ -j MASQUERADE; iptables -D FORWARD -i %s -j ACCEPT; iptables -D FORWARD -o %s -j ACCEPT",
-			cfg.WGAddress, wgIface, wgIface)
+		// In netstack mode these are skipped (no kernel interface for iptables).
+		var postUp, postDown string
+		if !cfg.WGNetstackMode {
+			// eth+ matches any ethN interface (Docker, ECS, etc.).
+			wgIface := cfg.WGInterfaceName
+			postUp = fmt.Sprintf("iptables -t nat -A POSTROUTING -s %s -o eth+ -j MASQUERADE; iptables -A FORWARD -i %s -j ACCEPT; iptables -A FORWARD -o %s -j ACCEPT",
+				cfg.WGAddress, wgIface, wgIface)
+			postDown = fmt.Sprintf("iptables -t nat -D POSTROUTING -s %s -o eth+ -j MASQUERADE; iptables -D FORWARD -i %s -j ACCEPT; iptables -D FORWARD -o %s -j ACCEPT",
+				cfg.WGAddress, wgIface, wgIface)
+		}
 
 		serverCfg = &domain.ServerConfig{
 			ID:                "default",

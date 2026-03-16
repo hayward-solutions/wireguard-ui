@@ -36,6 +36,7 @@ type Config struct {
 	WGMTU                int
 	WGDefaultAllowedIPs  string
 	WGUserspaceMode      bool
+	WGNetstackMode       bool
 	WGMockMode           bool
 
 	// Local Auth
@@ -95,6 +96,7 @@ func Load() (*Config, error) {
 	}
 
 	cfg.WGUserspaceMode = envOrDefault("WG_USERSPACE_MODE", "true") == "true"
+	cfg.WGNetstackMode = envOrDefault("WG_NETSTACK_MODE", "false") == "true"
 	cfg.WGMockMode = envOrDefault("WG_MOCK_MODE", "false") == "true"
 
 	expiryStr := envOrDefault("JWT_EXPIRY", "24h")
