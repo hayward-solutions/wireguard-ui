@@ -18,6 +18,9 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
+      - name: Create frontend build stub
+        run: mkdir -p frontend/build
+
       - name: Build
         run: go build ./...
 
