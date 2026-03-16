@@ -3,6 +3,7 @@ package wireguard
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"text/template"
 
 	"github.com/hayward-solutions/wireguard-ui/internal/domain"
@@ -23,7 +24,7 @@ PublicKey = {{ .Server.PublicKey }}
 {{- if .Peer.PresharedKey }}
 PresharedKey = {{ .Peer.PresharedKey }}
 {{- end }}
-Endpoint = {{ .Server.Endpoint }}:{{ .Server.ListenPort }}
+Endpoint = {{ .Endpoint }}
 AllowedIPs = {{ .Peer.AllowedIPs }}
 {{- if .Peer.PersistentKeepalive }}
 PersistentKeepalive = {{ .Peer.PersistentKeepalive }}
@@ -31,10 +32,11 @@ PersistentKeepalive = {{ .Peer.PersistentKeepalive }}
 `))
 
 type peerConfData struct {
-	Peer   *domain.Peer
-	Server *domain.ServerConfig
-	DNS    string
-	MTU    int
+	Peer     *domain.Peer
+	Server   *domain.ServerConfig
+	Endpoint string
+	DNS      string
+	MTU      int
 }
 
 // RenderPeerConfig generates a WireGuard .conf file for a peer.
@@ -44,11 +46,19 @@ func RenderPeerConfig(peer *domain.Peer, server *domain.ServerConfig) (string, e
 		dns = server.DNS
 	}
 
+	// If the endpoint already includes a port (host:port), use it as-is.
+	// Otherwise append the server's listen port.
+	endpoint := server.Endpoint
+	if !strings.Contains(endpoint, ":") {
+		endpoint = fmt.Sprintf("%s:%d", endpoint, server.ListenPort)
+	}
+
 	data := peerConfData{
-		Peer:   peer,
-		Server: server,
-		DNS:    dns,
-		MTU:    server.MTU,
+		Peer:     peer,
+		Server:   server,
+		Endpoint: endpoint,
+		DNS:      dns,
+		MTU:      server.MTU,
 	}
 
 	var buf bytes.Buffer
