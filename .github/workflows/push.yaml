@@ -19,7 +19,7 @@ jobs:
         run: go mod download
 
       - name: Create frontend build stub
-        run: mkdir -p frontend/build
+        run: mkdir -p frontend/build && touch frontend/build/.gitkeep
 
       - name: Build
         run: go build ./...
