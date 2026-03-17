@@ -36,6 +36,8 @@ func (h *ExportHandler) HandleConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Warn("audit", "action", "peer_config_exported", "actor", actorFromRequest(r), "target_id", peer.ID, "target_name", peer.Name)
+
 	w.Header().Set("Content-Type", "text/plain")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.conf"`, peer.Name))
 	w.Write([]byte(conf))
@@ -66,6 +68,8 @@ func (h *ExportHandler) HandleQRCode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to generate QR code")
 		return
 	}
+
+	slog.Warn("audit", "action", "peer_qrcode_exported", "actor", actorFromRequest(r), "target_id", peer.ID, "target_name", peer.Name)
 
 	w.Header().Set("Content-Type", "image/png")
 	w.Write(png)
