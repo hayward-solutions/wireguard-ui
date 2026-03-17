@@ -2,11 +2,17 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
+	"net"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// devBuild is set to "true" via -ldflags in development builds.
+// It allows mock mode to bind to non-loopback addresses.
+var devBuild string
 
 type Config struct {
 	// Server
@@ -163,6 +169,18 @@ func (c *Config) validate() error {
 		if len(c.CORSOrigins) == 0 {
 			c.CORSOrigins = []string{"*"}
 		}
+		if !isLoopbackAddr(c.ListenAddr) {
+			if devBuild == "true" {
+				slog.Warn("mock mode bound to non-loopback address (allowed by dev build)",
+					"listen_addr", c.ListenAddr)
+			} else {
+				return fmt.Errorf(
+					"mock mode refuses to bind to %q; use a loopback address (127.0.0.1, localhost, [::1]) "+
+						"or build with -ldflags '-X github.com/hayward-solutions/wireguard-ui/internal/config.devBuild=true'",
+					c.ListenAddr,
+				)
+			}
+		}
 		return nil
 	}
 
@@ -196,4 +214,20 @@ func envOrDefaultInt(key string, defaultVal int) (int, error) {
 		return defaultVal, nil
 	}
 	return strconv.Atoi(val)
+}
+
+// isLoopbackAddr returns true if addr binds only to a loopback interface.
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "" {
+		return false // ":8080" binds all interfaces
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

@@ -6,7 +6,7 @@ dev:
 
 dev-backend:
 	WG_MOCK_MODE=true WG_ENDPOINT=localhost:51820 \
-	  go run ./cmd/server
+	  go run -ldflags="-X github.com/hayward-solutions/wireguard-ui/internal/config.devBuild=true" ./cmd/server
 
 dev-frontend:
 	cd frontend && npm run dev -- --port 5173
