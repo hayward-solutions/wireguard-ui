@@ -587,6 +587,302 @@ func (s *SQLiteStore) UpdateAPITokenLastUsed(ctx context.Context, id string) err
 	return nil
 }
 
+// --- Groups ---
+
+func (s *SQLiteStore) ListGroups(ctx context.Context) ([]domain.Group, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, name, source, created_at
+		FROM groups ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("list groups: %w", err)
+	}
+	defer rows.Close()
+
+	var groups []domain.Group
+	for rows.Next() {
+		var g domain.Group
+		if err := rows.Scan(&g.ID, &g.Name, &g.Source, &g.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan group: %w", err)
+		}
+		groups = append(groups, g)
+	}
+	return groups, rows.Err()
+}
+
+func (s *SQLiteStore) GetGroup(ctx context.Context, id string) (*domain.Group, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, name, source, created_at
+		FROM groups WHERE id = ?`, id)
+
+	var g domain.Group
+	err := row.Scan(&g.ID, &g.Name, &g.Source, &g.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get group: %w", err)
+	}
+	return &g, nil
+}
+
+func (s *SQLiteStore) GetGroupByName(ctx context.Context, name string) (*domain.Group, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, name, source, created_at
+		FROM groups WHERE name = ?`, name)
+
+	var g domain.Group
+	err := row.Scan(&g.ID, &g.Name, &g.Source, &g.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get group by name: %w", err)
+	}
+	return &g, nil
+}
+
+func (s *SQLiteStore) CreateGroup(ctx context.Context, g *domain.Group) error {
+	g.CreatedAt = time.Now()
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO groups (id, name, source, created_at)
+		VALUES (?, ?, ?, ?)`,
+		g.ID, g.Name, g.Source, g.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("create group: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) UpdateGroup(ctx context.Context, g *domain.Group) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE groups SET name = ? WHERE id = ?`,
+		g.Name, g.ID)
+	if err != nil {
+		return fmt.Errorf("update group: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) DeleteGroup(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM groups WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete group: %w", err)
+	}
+	return nil
+}
+
+// --- User-Group Memberships ---
+
+func (s *SQLiteStore) GetUserGroups(ctx context.Context, userID string) ([]domain.Group, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT g.id, g.name, g.source, g.created_at
+		FROM groups g
+		JOIN user_groups ug ON ug.group_id = g.id
+		WHERE ug.user_id = ?
+		ORDER BY g.name`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get user groups: %w", err)
+	}
+	defer rows.Close()
+
+	var groups []domain.Group
+	for rows.Next() {
+		var g domain.Group
+		if err := rows.Scan(&g.ID, &g.Name, &g.Source, &g.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan group: %w", err)
+		}
+		groups = append(groups, g)
+	}
+	return groups, rows.Err()
+}
+
+func (s *SQLiteStore) SetUserGroups(ctx context.Context, userID string, groupIDs []string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM user_groups WHERE user_id = ?`, userID); err != nil {
+		return fmt.Errorf("clear user groups: %w", err)
+	}
+
+	for _, gid := range groupIDs {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO user_groups (user_id, group_id, source) VALUES (?, ?, 'local')`,
+			userID, gid); err != nil {
+			return fmt.Errorf("add user group: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (s *SQLiteStore) SyncOIDCGroups(ctx context.Context, userID string, groupIDs []string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM user_groups WHERE user_id = ? AND source = 'oidc'`, userID); err != nil {
+		return fmt.Errorf("clear oidc groups: %w", err)
+	}
+
+	for _, gid := range groupIDs {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO user_groups (user_id, group_id, source) VALUES (?, ?, 'oidc')`,
+			userID, gid); err != nil {
+			return fmt.Errorf("add oidc group: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (s *SQLiteStore) GetGroupMembers(ctx context.Context, groupID string) ([]domain.User, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT u.id, u.username, u.password_hash, u.name, u.role, u.last_login, u.created_at
+		FROM users u
+		JOIN user_groups ug ON ug.user_id = u.id
+		WHERE ug.group_id = ?
+		ORDER BY u.username`, groupID)
+	if err != nil {
+		return nil, fmt.Errorf("get group members: %w", err)
+	}
+	defer rows.Close()
+
+	var users []domain.User
+	for rows.Next() {
+		var u domain.User
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.LastLogin, &u.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan user: %w", err)
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
+// --- ACL Rules ---
+
+func (s *SQLiteStore) ListACLRules(ctx context.Context) ([]domain.ACLRule, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, name, description, priority, action, protocol,
+		       dst_cidr, COALESCE(dst_ports, ''), group_id, user_id,
+		       enabled, created_at, updated_at
+		FROM acl_rules ORDER BY priority, name`)
+	if err != nil {
+		return nil, fmt.Errorf("list acl rules: %w", err)
+	}
+	defer rows.Close()
+
+	var rules []domain.ACLRule
+	for rows.Next() {
+		var r domain.ACLRule
+		if err := rows.Scan(&r.ID, &r.Name, &r.Description, &r.Priority,
+			&r.Action, &r.Protocol, &r.DstCIDR, &r.DstPorts,
+			&r.GroupID, &r.UserID, &r.Enabled, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan acl rule: %w", err)
+		}
+		rules = append(rules, r)
+	}
+	return rules, rows.Err()
+}
+
+func (s *SQLiteStore) GetACLRule(ctx context.Context, id string) (*domain.ACLRule, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, name, description, priority, action, protocol,
+		       dst_cidr, COALESCE(dst_ports, ''), group_id, user_id,
+		       enabled, created_at, updated_at
+		FROM acl_rules WHERE id = ?`, id)
+
+	var r domain.ACLRule
+	err := row.Scan(&r.ID, &r.Name, &r.Description, &r.Priority,
+		&r.Action, &r.Protocol, &r.DstCIDR, &r.DstPorts,
+		&r.GroupID, &r.UserID, &r.Enabled, &r.CreatedAt, &r.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get acl rule: %w", err)
+	}
+	return &r, nil
+}
+
+func (s *SQLiteStore) CreateACLRule(ctx context.Context, r *domain.ACLRule) error {
+	now := time.Now()
+	r.CreatedAt = now
+	r.UpdatedAt = now
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO acl_rules (id, name, description, priority, action, protocol,
+		                       dst_cidr, dst_ports, group_id, user_id, enabled,
+		                       created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.ID, r.Name, r.Description, r.Priority, r.Action, r.Protocol,
+		r.DstCIDR, r.DstPorts, r.GroupID, r.UserID, r.Enabled,
+		r.CreatedAt, r.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("create acl rule: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) UpdateACLRule(ctx context.Context, r *domain.ACLRule) error {
+	r.UpdatedAt = time.Now()
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE acl_rules SET name = ?, description = ?, priority = ?,
+		       action = ?, protocol = ?, dst_cidr = ?, dst_ports = ?,
+		       group_id = ?, user_id = ?, enabled = ?, updated_at = ?
+		WHERE id = ?`,
+		r.Name, r.Description, r.Priority, r.Action, r.Protocol,
+		r.DstCIDR, r.DstPorts, r.GroupID, r.UserID, r.Enabled,
+		r.UpdatedAt, r.ID)
+	if err != nil {
+		return fmt.Errorf("update acl rule: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) DeleteACLRule(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM acl_rules WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete acl rule: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) GetEffectiveACLRules(ctx context.Context, userID string) ([]domain.ACLRule, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT r.id, r.name, r.description, r.priority, r.action, r.protocol,
+		       r.dst_cidr, COALESCE(r.dst_ports, ''), r.group_id, r.user_id,
+		       r.enabled, r.created_at, r.updated_at
+		FROM acl_rules r
+		LEFT JOIN user_groups ug ON r.group_id = ug.group_id
+		WHERE r.enabled = 1
+		  AND (
+		    r.user_id = ?
+		    OR ug.user_id = ?
+		    OR (r.user_id IS NULL AND r.group_id IS NULL)
+		  )
+		ORDER BY r.priority, r.name`, userID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get effective acl rules: %w", err)
+	}
+	defer rows.Close()
+
+	var rules []domain.ACLRule
+	for rows.Next() {
+		var r domain.ACLRule
+		if err := rows.Scan(&r.ID, &r.Name, &r.Description, &r.Priority,
+			&r.Action, &r.Protocol, &r.DstCIDR, &r.DstPorts,
+			&r.GroupID, &r.UserID, &r.Enabled, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan acl rule: %w", err)
+		}
+		rules = append(rules, r)
+	}
+	return rules, rows.Err()
+}
+
 // --- Tunnels ---
 
 func (s *SQLiteStore) ListTunnels(ctx context.Context) ([]domain.Tunnel, error) {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hayward-solutions/wireguard-ui/internal/acl"
 	"github.com/hayward-solutions/wireguard-ui/internal/auth"
 	"github.com/hayward-solutions/wireguard-ui/internal/database"
 	"github.com/hayward-solutions/wireguard-ui/internal/domain"
@@ -16,13 +18,14 @@ import (
 )
 
 type AuthHandler struct {
-	oidc            *auth.OIDCProvider
-	jwt             *auth.JWTManager
-	store           database.Store
-	loginLimiter    *auth.RateLimiter
-	oidcAdminGroup  string
-	secureCookie    bool
-	sessionExpiry   time.Duration
+	oidc           *auth.OIDCProvider
+	jwt            *auth.JWTManager
+	store          database.Store
+	loginLimiter   *auth.RateLimiter
+	oidcAdminGroup string
+	secureCookie   bool
+	sessionExpiry  time.Duration
+	policyEngine   *acl.PolicyEngine
 }
 
 type AuthHandlerConfig struct {
@@ -33,6 +36,7 @@ type AuthHandlerConfig struct {
 	OIDCAdminGroup string
 	SecureCookie   bool
 	SessionExpiry  time.Duration
+	PolicyEngine   *acl.PolicyEngine
 }
 
 func NewAuthHandler(cfg AuthHandlerConfig) *AuthHandler {
@@ -44,6 +48,7 @@ func NewAuthHandler(cfg AuthHandlerConfig) *AuthHandler {
 		oidcAdminGroup: cfg.OIDCAdminGroup,
 		secureCookie:   cfg.SecureCookie,
 		sessionExpiry:  cfg.SessionExpiry,
+		policyEngine:   cfg.PolicyEngine,
 	}
 }
 
@@ -221,6 +226,11 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Sync OIDC groups
+	if len(oidcUser.Groups) > 0 {
+		h.syncOIDCGroups(r.Context(), user.ID, oidcUser.Groups)
+	}
+
 	if err := h.store.UpdateLastLogin(r.Context(), user.ID); err != nil {
 		slog.Error("failed to update last login", "error", err)
 	}
@@ -270,6 +280,40 @@ func (h *AuthHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 		"name":  claims.Name,
 		"role":  claims.Role,
 	})
+}
+
+func (h *AuthHandler) syncOIDCGroups(ctx context.Context, userID string, oidcGroups []string) {
+	var groupIDs []string
+	for _, name := range oidcGroups {
+		group, err := h.store.GetGroupByName(ctx, name)
+		if err != nil {
+			slog.Error("lookup oidc group", "name", name, "error", err)
+			continue
+		}
+		if group == nil {
+			group = &domain.Group{
+				ID:     uuid.New().String(),
+				Name:   name,
+				Source: domain.GroupSourceOIDC,
+			}
+			if err := h.store.CreateGroup(ctx, group); err != nil {
+				slog.Error("create oidc group", "name", name, "error", err)
+				continue
+			}
+			slog.Info("created OIDC group", "name", name, "id", group.ID)
+		}
+		groupIDs = append(groupIDs, group.ID)
+	}
+
+	if err := h.store.SyncOIDCGroups(ctx, userID, groupIDs); err != nil {
+		slog.Error("sync oidc groups", "user_id", userID, "error", err)
+	}
+
+	if h.policyEngine != nil {
+		if err := h.policyEngine.Reload(ctx, h.store); err != nil {
+			slog.Error("acl reload after oidc sync", "error", err)
+		}
+	}
 }
 
 // HandleRefresh issues a new short-lived JWT from a valid session cookie.

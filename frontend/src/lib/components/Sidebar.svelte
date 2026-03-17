@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { LayoutDashboard, Users, Server, ShieldCheck, CircleUser, LogOut, Sun, Moon, Monitor } from 'lucide-svelte';
+	import { LayoutDashboard, Users, Server, ShieldCheck, CircleUser, LogOut, Sun, Moon, Monitor, UsersRound, Shield } from 'lucide-svelte';
 	import { logout, user } from '$lib/stores/auth';
 	import { theme, cycleTheme } from '$lib/stores/theme';
 	import { get } from 'svelte/store';
@@ -12,9 +12,15 @@
 		{ href: '/profile', label: 'Profile', icon: CircleUser }
 	];
 
+	const adminLinks = [
+		{ href: '/users', label: 'Users', icon: ShieldCheck },
+		{ href: '/groups', label: 'Groups', icon: UsersRound },
+		{ href: '/acls', label: 'ACL Rules', icon: Shield }
+	];
+
 	const links = $derived(
 		get(user)?.role === 'admin'
-			? [...baseLinks, { href: '/users', label: 'Users', icon: ShieldCheck }]
+			? [...baseLinks, ...adminLinks]
 			: baseLinks
 	);
 
