@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -9,6 +10,45 @@ import (
 	"github.com/hayward-solutions/wireguard-ui/internal/database"
 	"github.com/hayward-solutions/wireguard-ui/internal/domain"
 )
+
+// roleRank returns a numeric rank for role comparison.
+// Higher rank = more privileges: admin(3) > editor(2) > viewer(1).
+func roleRank(role string) int {
+	switch role {
+	case domain.RoleAdmin:
+		return 3
+	case domain.RoleEditor:
+		return 2
+	case domain.RoleViewer:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// RequireRole returns middleware that requires the caller to have at least
+// the specified minimum role (viewer < editor < admin).
+func RequireRole(minRole string) func(http.Handler) http.Handler {
+	minRank := roleRank(minRole)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims := auth.ClaimsFromContext(r.Context())
+			if claims == nil {
+				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing credentials")
+				return
+			}
+			if roleRank(claims.Role) < minRank {
+				writeError(w, http.StatusForbidden, "FORBIDDEN",
+					fmt.Sprintf("%s access required", minRole))
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RequireAdmin is chi middleware that restricts access to admin users only.
+var RequireAdmin = RequireRole(domain.RoleAdmin)
 
 // requirePeerAccess fetches the peer by URL param {id} and verifies the caller
 // owns the peer or is an admin. Returns the peer and claims on success.
@@ -47,20 +87,4 @@ func actorFromRequest(r *http.Request) string {
 		return c.Subject
 	}
 	return "unknown"
-}
-
-// RequireAdmin is chi middleware that restricts access to admin users only.
-func RequireAdmin(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		claims := auth.ClaimsFromContext(r.Context())
-		if claims == nil {
-			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing credentials")
-			return
-		}
-		if claims.Role != domain.RoleAdmin {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "admin access required")
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }

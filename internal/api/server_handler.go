@@ -36,6 +36,14 @@ func (h *ServerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Redact operational details for non-admin users
+	claims := auth.ClaimsFromContext(r.Context())
+	if claims == nil || claims.Role != domain.RoleAdmin {
+		cfg.PostUp = ""
+		cfg.PostDown = ""
+		cfg.FirewallConfig = nil
+	}
+
 	// Include custom_scripts_allowed so the frontend knows the state
 	type serverConfigResponse struct {
 		*domain.ServerConfig
