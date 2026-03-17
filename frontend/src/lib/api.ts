@@ -128,6 +128,19 @@ class APIClient {
 			new_password: newPassword
 		});
 	}
+
+	// API Tokens
+	async listTokens() {
+		return this.request<APIToken[]>('GET', '/api/v1/me/tokens');
+	}
+
+	async createToken(name: string) {
+		return this.request<APITokenCreateResponse>('POST', '/api/v1/me/tokens', { name });
+	}
+
+	async deleteToken(id: string) {
+		return this.request<void>('DELETE', `/api/v1/me/tokens/${id}`);
+	}
 }
 
 export interface ServerConfig {
@@ -164,6 +177,24 @@ export interface User {
 	username: string;
 	name: string;
 	role: string;
+	created_at: string;
+}
+
+export interface APIToken {
+	id: string;
+	user_id: string;
+	name: string;
+	token_prefix: string;
+	last_used: string | null;
+	expires_at: string | null;
+	created_at: string;
+}
+
+export interface APITokenCreateResponse {
+	id: string;
+	name: string;
+	token: string;
+	token_prefix: string;
 	created_at: string;
 }
 

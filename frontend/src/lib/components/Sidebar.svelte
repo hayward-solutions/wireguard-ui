@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { LayoutDashboard, Users, Server, ShieldCheck, LogOut, Sun, Moon, Monitor } from 'lucide-svelte';
+	import { LayoutDashboard, Users, Server, ShieldCheck, CircleUser, LogOut, Sun, Moon, Monitor } from 'lucide-svelte';
 	import { logout, user } from '$lib/stores/auth';
 	import { theme, cycleTheme } from '$lib/stores/theme';
 	import { get } from 'svelte/store';
@@ -8,7 +8,8 @@
 	const baseLinks = [
 		{ href: '/', label: 'Dashboard', icon: LayoutDashboard },
 		{ href: '/peers', label: 'Peers', icon: Users },
-		{ href: '/server', label: 'Server', icon: Server }
+		{ href: '/server', label: 'Server', icon: Server },
+		{ href: '/profile', label: 'Profile', icon: CircleUser }
 	];
 
 	const links = $derived(

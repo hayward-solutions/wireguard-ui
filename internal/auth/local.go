@@ -1,32 +1,108 @@
 package auth
 
 import (
+	"context"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
+	"log/slog"
 	"net/http"
+	"strings"
+	"time"
+
+	"github.com/hayward-solutions/wireguard-ui/internal/database"
 )
 
-// APIKeyMiddleware validates requests with an X-API-Key header.
-// If the API key is empty (not configured), this middleware is a no-op pass-through.
-func APIKeyMiddleware(apiKey string) func(http.Handler) http.Handler {
+// APIKeyMiddleware validates requests with an X-API-Key header or Bearer tokens
+// that start with "wgui_". It checks the static admin API key first, then
+// looks up per-user API tokens in the database.
+func APIKeyMiddleware(apiKey string, store database.Store) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Try X-API-Key header
 			key := r.Header.Get("X-API-Key")
-			if key != "" && apiKey != "" {
-				if subtle.ConstantTimeCompare([]byte(key), []byte(apiKey)) == 1 {
-					// API key valid — inject admin claims into context
-					claims := &Claims{
-						Email: "api@local",
-						Name:  "API",
-						Role:  "admin",
-					}
-					claims.Subject = "api-key"
-					ctx := SetClaims(r.Context(), claims)
-					next.ServeHTTP(w, r.WithContext(ctx))
+			if key != "" {
+				if tryAPIToken(r, next, w, key, apiKey, store) {
 					return
 				}
 			}
+
+			// Try Authorization: Bearer with wgui_ prefix
+			if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+				if strings.HasPrefix(authHeader, "Bearer wgui_") {
+					bearer := strings.TrimPrefix(authHeader, "Bearer ")
+					if tryAPIToken(r, next, w, bearer, apiKey, store) {
+						return
+					}
+				}
+			}
+
 			// No API key or invalid — pass through to normal JWT auth
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// tryAPIToken attempts to authenticate with the given token.
+// Returns true if authentication was handled (request served), false to continue.
+func tryAPIToken(r *http.Request, next http.Handler, w http.ResponseWriter, token, staticKey string, store database.Store) bool {
+	// Check static admin API key first
+	if staticKey != "" && subtle.ConstantTimeCompare([]byte(token), []byte(staticKey)) == 1 {
+		claims := &Claims{
+			Email: "api@local",
+			Name:  "API",
+			Role:  "admin",
+		}
+		claims.Subject = "api-key"
+		ctx := SetClaims(r.Context(), claims)
+		next.ServeHTTP(w, r.WithContext(ctx))
+		return true
+	}
+
+	// Check per-user API tokens
+	if store != nil && strings.HasPrefix(token, "wgui_") {
+		hash := sha256.Sum256([]byte(token))
+		tokenHash := hex.EncodeToString(hash[:])
+
+		apiToken, err := store.GetAPITokenByHash(r.Context(), tokenHash)
+		if err != nil {
+			slog.Error("failed to look up API token", "error", err)
+			return false
+		}
+		if apiToken == nil {
+			return false
+		}
+
+		// Check expiry
+		if apiToken.ExpiresAt != nil && apiToken.ExpiresAt.Before(time.Now()) {
+			return false
+		}
+
+		// Load the user to get their role and info
+		user, err := store.GetUser(r.Context(), apiToken.UserID)
+		if err != nil || user == nil {
+			slog.Error("failed to load user for API token", "error", err, "user_id", apiToken.UserID)
+			return false
+		}
+
+		claims := &Claims{
+			Email: user.Username,
+			Name:  user.Name,
+			Role:  user.Role,
+		}
+		claims.Subject = user.ID
+
+		// Update last_used in background
+		go func() {
+			if err := store.UpdateAPITokenLastUsed(context.Background(), apiToken.ID); err != nil {
+				slog.Error("failed to update API token last used", "error", err)
+			}
+		}()
+
+		ctx := SetClaims(r.Context(), claims)
+		next.ServeHTTP(w, r.WithContext(ctx))
+		return true
+	}
+
+	return false
 }

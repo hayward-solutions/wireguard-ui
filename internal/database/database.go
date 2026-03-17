@@ -29,6 +29,13 @@ type Store interface {
 	UpdateUserPassword(ctx context.Context, id string, passwordHash string) error
 	DeleteUser(ctx context.Context, id string) error
 
+	// API Tokens
+	ListAPITokensByUser(ctx context.Context, userID string) ([]domain.APIToken, error)
+	GetAPITokenByHash(ctx context.Context, tokenHash string) (*domain.APIToken, error)
+	CreateAPIToken(ctx context.Context, token *domain.APIToken) error
+	DeleteAPIToken(ctx context.Context, id string) error
+	UpdateAPITokenLastUsed(ctx context.Context, id string) error
+
 	// Tunnels (stretch)
 	ListTunnels(ctx context.Context) ([]domain.Tunnel, error)
 	GetTunnel(ctx context.Context, id string) (*domain.Tunnel, error)

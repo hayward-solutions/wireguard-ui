@@ -410,6 +410,72 @@ func (s *PostgresStore) DeleteUser(ctx context.Context, id string) error {
 	return nil
 }
 
+// --- API Tokens ---
+
+func (s *PostgresStore) ListAPITokensByUser(ctx context.Context, userID string) ([]domain.APIToken, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, user_id, name, token_prefix, last_used, expires_at, created_at
+		FROM api_tokens WHERE user_id = $1 ORDER BY created_at DESC`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list api tokens by user: %w", err)
+	}
+	defer rows.Close()
+
+	var tokens []domain.APIToken
+	for rows.Next() {
+		var t domain.APIToken
+		if err := rows.Scan(&t.ID, &t.UserID, &t.Name, &t.TokenPrefix, &t.LastUsed, &t.ExpiresAt, &t.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan api token: %w", err)
+		}
+		tokens = append(tokens, t)
+	}
+	return tokens, rows.Err()
+}
+
+func (s *PostgresStore) GetAPITokenByHash(ctx context.Context, tokenHash string) (*domain.APIToken, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, user_id, name, token_hash, token_prefix, last_used, expires_at, created_at
+		FROM api_tokens WHERE token_hash = $1`, tokenHash)
+
+	var t domain.APIToken
+	err := row.Scan(&t.ID, &t.UserID, &t.Name, &t.TokenHash, &t.TokenPrefix, &t.LastUsed, &t.ExpiresAt, &t.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get api token by hash: %w", err)
+	}
+	return &t, nil
+}
+
+func (s *PostgresStore) CreateAPIToken(ctx context.Context, token *domain.APIToken) error {
+	token.CreatedAt = time.Now()
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO api_tokens (id, user_id, name, token_hash, token_prefix, expires_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		token.ID, token.UserID, token.Name, token.TokenHash, token.TokenPrefix, token.ExpiresAt, token.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("create api token: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) DeleteAPIToken(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM api_tokens WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete api token: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) UpdateAPITokenLastUsed(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE api_tokens SET last_used = $1 WHERE id = $2`, time.Now(), id)
+	if err != nil {
+		return fmt.Errorf("update api token last used: %w", err)
+	}
+	return nil
+}
+
 // --- Tunnels ---
 
 func (s *PostgresStore) ListTunnels(ctx context.Context) ([]domain.Tunnel, error) {
