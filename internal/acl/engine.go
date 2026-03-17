@@ -13,13 +13,28 @@ import (
 	"github.com/hayward-solutions/wireguard-ui/internal/domain"
 )
 
+// CompiledRule is an exported compiled ACL rule for use by enforcement listeners.
+type CompiledRule struct {
+	Network  netip.Prefix
+	Protocol string // "any", "tcp", "udp"
+	PortLow  uint16
+	PortHigh uint16
+}
+
+// ReloadListener is notified after a policy reload completes.
+// Implementations can use the compiled policies to enforce ACLs externally (e.g., via iptables).
+type ReloadListener interface {
+	OnACLReload(policies map[string][]CompiledRule, admins map[string]bool)
+}
+
 // PolicyEngine is an in-memory compiled ACL evaluator.
 // It maps peer VPN IPs to pre-compiled allow rules for efficient per-connection checks.
 // The engine is safe for concurrent use.
 type PolicyEngine struct {
-	mu       sync.RWMutex
-	policies map[string]*userPolicy // peer VPN IP → compiled rules
-	admins   map[string]bool        // peer VPN IPs owned by admin users
+	mu        sync.RWMutex
+	policies  map[string]*userPolicy // peer VPN IP → compiled rules
+	admins    map[string]bool        // peer VPN IPs owned by admin users
+	listeners []ReloadListener
 }
 
 type userPolicy struct {
@@ -38,6 +53,13 @@ func NewPolicyEngine() *PolicyEngine {
 		policies: make(map[string]*userPolicy),
 		admins:   make(map[string]bool),
 	}
+}
+
+// RegisterListener adds a listener that will be notified after each policy reload.
+func (e *PolicyEngine) RegisterListener(l ReloadListener) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.listeners = append(e.listeners, l)
 }
 
 // Check evaluates whether traffic from srcIP using the given protocol to dstIP:dstPort is allowed.
@@ -165,6 +187,30 @@ func (e *PolicyEngine) Reload(ctx context.Context, store database.Store) error {
 		"peers", len(newPolicies)+len(newAdmins),
 		"admin_peers", len(newAdmins),
 		"policy_peers", len(newPolicies))
+
+	// Notify listeners with exported rule types
+	if len(e.listeners) > 0 {
+		exported := make(map[string][]CompiledRule, len(newPolicies))
+		for ip, up := range newPolicies {
+			rules := make([]CompiledRule, len(up.rules))
+			for i, r := range up.rules {
+				rules[i] = CompiledRule{
+					Network:  r.network,
+					Protocol: r.protocol,
+					PortLow:  r.portLow,
+					PortHigh: r.portHigh,
+				}
+			}
+			exported[ip] = rules
+		}
+		exportedAdmins := make(map[string]bool, len(newAdmins))
+		for ip := range newAdmins {
+			exportedAdmins[ip] = true
+		}
+		for _, l := range e.listeners {
+			l.OnACLReload(exported, exportedAdmins)
+		}
+	}
 
 	return nil
 }

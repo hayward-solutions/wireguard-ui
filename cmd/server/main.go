@@ -103,15 +103,23 @@ func run() error {
 		nm.SetPolicyEngine(policyEngine)
 		wg = nm
 	} else if cfg.WGUserspaceMode {
-		wg, err = wireguard.NewUserspaceManager(cfg.WGInterfaceName)
+		um, err := wireguard.NewUserspaceManager(cfg.WGInterfaceName)
 		if err != nil {
 			return err
 		}
+		enforcer := wireguard.NewIptablesACLEnforcer(cfg.WGInterfaceName)
+		um.SetACLEnforcer(enforcer)
+		policyEngine.RegisterListener(enforcer)
+		wg = um
 	} else {
-		wg, err = wireguard.NewWgctrlManager(cfg.WGInterfaceName)
+		wm, err := wireguard.NewWgctrlManager(cfg.WGInterfaceName)
 		if err != nil {
 			return err
 		}
+		enforcer := wireguard.NewIptablesACLEnforcer(cfg.WGInterfaceName)
+		wm.SetACLEnforcer(enforcer)
+		policyEngine.RegisterListener(enforcer)
+		wg = wm
 	}
 
 	// Auto-initialize server config on first boot
@@ -213,6 +221,12 @@ func run() error {
 				slog.Info("re-synced peers from database", "count", synced)
 			}
 		}
+	}
+
+	// Reload ACL policies now that listeners are registered and peers are synced.
+	// The initial Reload() above ran before listeners were registered.
+	if err := policyEngine.Reload(ctx, store); err != nil {
+		slog.Warn("ACL policy reload after listener registration failed", "error", err)
 	}
 
 	// Start stats monitor

@@ -28,12 +28,18 @@ type UserspaceManager struct {
 	allowCustomScripts bool
 	firewallConfig     *domain.FirewallConfig
 	serverAddress      string
+	aclEnforcer        *IptablesACLEnforcer
 }
 
 func NewUserspaceManager(interfaceName string) (*UserspaceManager, error) {
 	return &UserspaceManager{
 		interfaceName: interfaceName,
 	}, nil
+}
+
+// SetACLEnforcer sets the iptables ACL enforcer for this manager.
+func (m *UserspaceManager) SetACLEnforcer(enforcer *IptablesACLEnforcer) {
+	m.aclEnforcer = enforcer
 }
 
 func (m *UserspaceManager) Start(cfg *domain.ServerConfig) error {
@@ -233,6 +239,11 @@ func (m *UserspaceManager) GetStats() ([]domain.PeerStats, error) {
 }
 
 func (m *UserspaceManager) Close() error {
+	// Clean up ACL iptables rules before removing firewall rules.
+	if m.aclEnforcer != nil {
+		m.aclEnforcer.Cleanup()
+	}
+
 	// Run PostDown custom script (if allowed)
 	if m.postDown != "" {
 		if err := RunScriptIfAllowed(m.postDown, "post_down", m.allowCustomScripts); err != nil {
