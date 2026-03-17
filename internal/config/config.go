@@ -22,6 +22,7 @@ type Config struct {
 	OIDCClientSecret string
 	OIDCRedirectURL  string
 	OIDCScopes       string
+	OIDCAdminGroup   string
 
 	// JWT
 	JWTSecret string
@@ -73,6 +74,7 @@ func Load() (*Config, error) {
 		OIDCClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
 		OIDCRedirectURL: os.Getenv("OIDC_REDIRECT_URL"),
 		OIDCScopes:      envOrDefault("OIDC_SCOPES", "openid,profile,email"),
+		OIDCAdminGroup:  os.Getenv("OIDC_ADMIN_GROUP"),
 		JWTSecret:       os.Getenv("JWT_SECRET"),
 		WGInterfaceName: envOrDefault("WG_INTERFACE_NAME", "wg0"),
 		WGAddress:       envOrDefault("WG_ADDRESS", "10.0.0.1/24"),

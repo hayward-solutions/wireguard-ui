@@ -27,6 +27,7 @@ type OIDCUser struct {
 	Subject string
 	Email   string
 	Name    string
+	Groups  []string
 }
 
 func NewOIDCProvider(ctx context.Context, cfg OIDCConfig) (*OIDCProvider, error) {
@@ -83,8 +84,9 @@ func (p *OIDCProvider) Exchange(ctx context.Context, code string) (*OIDCUser, er
 	}
 
 	var claims struct {
-		Email string `json:"email"`
-		Name  string `json:"name"`
+		Email  string   `json:"email"`
+		Name   string   `json:"name"`
+		Groups []string `json:"groups"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
 		return nil, fmt.Errorf("parse claims: %w", err)
@@ -94,5 +96,6 @@ func (p *OIDCProvider) Exchange(ctx context.Context, code string) (*OIDCUser, er
 		Subject: idToken.Subject,
 		Email:   claims.Email,
 		Name:    claims.Name,
+		Groups:  claims.Groups,
 	}, nil
 }

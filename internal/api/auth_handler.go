@@ -15,25 +15,28 @@ import (
 )
 
 type AuthHandler struct {
-	oidc         *auth.OIDCProvider
-	jwt          *auth.JWTManager
-	store        database.Store
-	secureCookie bool
+	oidc           *auth.OIDCProvider
+	jwt            *auth.JWTManager
+	store          database.Store
+	oidcAdminGroup string
+	secureCookie   bool
 }
 
 type AuthHandlerConfig struct {
-	OIDC         *auth.OIDCProvider
-	JWT          *auth.JWTManager
-	Store        database.Store
-	SecureCookie bool
+	OIDC           *auth.OIDCProvider
+	JWT            *auth.JWTManager
+	Store          database.Store
+	OIDCAdminGroup string
+	SecureCookie   bool
 }
 
 func NewAuthHandler(cfg AuthHandlerConfig) *AuthHandler {
 	return &AuthHandler{
-		oidc:         cfg.OIDC,
-		jwt:          cfg.JWT,
-		store:        cfg.Store,
-		secureCookie: cfg.SecureCookie,
+		oidc:           cfg.OIDC,
+		jwt:            cfg.JWT,
+		store:          cfg.Store,
+		oidcAdminGroup: cfg.OIDCAdminGroup,
+		secureCookie:   cfg.SecureCookie,
 	}
 }
 
@@ -157,18 +160,36 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Determine role based on OIDC group membership
+	role := domain.RoleViewer
+	if h.oidcAdminGroup != "" {
+		for _, g := range oidcUser.Groups {
+			if g == h.oidcAdminGroup {
+				role = domain.RoleAdmin
+				break
+			}
+		}
+	}
+
 	// Look up or create the OIDC user
 	existing, _ := h.store.GetUser(r.Context(), oidcUser.Subject)
 	var user *domain.User
 	if existing != nil {
 		user = existing
+		// Sync role from IdP group membership on every login
+		if user.Role != role {
+			user.Role = role
+			if err := h.store.UpdateUser(r.Context(), user); err != nil {
+				slog.Error("update oidc user role failed", "error", err)
+			}
+		}
 	} else {
 		now := time.Now()
 		user = &domain.User{
 			ID:        oidcUser.Subject,
 			Username:  oidcUser.Email,
 			Name:      oidcUser.Name,
-			Role:      domain.RoleAdmin,
+			Role:      role,
 			CreatedAt: now,
 		}
 		if err := h.store.CreateUser(r.Context(), user); err != nil {
