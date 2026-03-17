@@ -7,19 +7,24 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/hayward-solutions/wireguard-ui/internal/auth"
+	"github.com/hayward-solutions/wireguard-ui/internal/database"
+	"github.com/hayward-solutions/wireguard-ui/internal/domain"
 	"github.com/hayward-solutions/wireguard-ui/internal/monitor"
 )
 
 type StatsHandler struct {
-	mon *monitor.Monitor
+	mon   *monitor.Monitor
+	store database.Store
 }
 
-func NewStatsHandler(mon *monitor.Monitor) *StatsHandler {
-	return &StatsHandler{mon: mon}
+func NewStatsHandler(mon *monitor.Monitor, store database.Store) *StatsHandler {
+	return &StatsHandler{mon: mon, store: store}
 }
 
 func (h *StatsHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	stats := h.mon.GetStats()
+	stats = h.filterStats(r, stats)
 	writeJSON(w, http.StatusOK, stats)
 }
 
@@ -39,20 +44,48 @@ func (h *StatsHandler) HandleStream(w http.ResponseWriter, r *http.Request) {
 	defer ticker.Stop()
 
 	// Send initial stats immediately
-	h.sendStats(w, flusher)
+	h.sendStats(w, flusher, r)
 
 	for {
 		select {
 		case <-r.Context().Done():
 			return
 		case <-ticker.C:
-			h.sendStats(w, flusher)
+			h.sendStats(w, flusher, r)
 		}
 	}
 }
 
-func (h *StatsHandler) sendStats(w http.ResponseWriter, flusher http.Flusher) {
+func (h *StatsHandler) filterStats(r *http.Request, stats []domain.PeerStats) []domain.PeerStats {
+	claims := auth.ClaimsFromContext(r.Context())
+	if claims == nil || claims.Role == domain.RoleAdmin {
+		return stats
+	}
+
+	peers, err := h.store.ListPeersByUser(r.Context(), claims.Subject)
+	if err != nil {
+		slog.Error("list peers for stats filtering", "error", err)
+		return []domain.PeerStats{}
+	}
+
+	owned := make(map[string]struct{}, len(peers))
+	for _, p := range peers {
+		owned[p.PublicKey] = struct{}{}
+	}
+
+	filtered := make([]domain.PeerStats, 0, len(peers))
+	for _, s := range stats {
+		if _, ok := owned[s.PublicKey]; ok {
+			s.Endpoint = ""
+			filtered = append(filtered, s)
+		}
+	}
+	return filtered
+}
+
+func (h *StatsHandler) sendStats(w http.ResponseWriter, flusher http.Flusher, r *http.Request) {
 	stats := h.mon.GetStats()
+	stats = h.filterStats(r, stats)
 	data, err := json.Marshal(stats)
 	if err != nil {
 		slog.Error("marshal stats for sse", "error", err)

@@ -96,7 +96,7 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		r.Get("/api/v1/peers/{id}/qrcode", exportHandler.HandleQRCode)
 
 		// Stats
-		statsHandler := NewStatsHandler(cfg.Monitor)
+		statsHandler := NewStatsHandler(cfg.Monitor, cfg.Store)
 		r.Get("/api/v1/stats", statsHandler.HandleGet)
 		r.Get("/api/v1/stats/stream", statsHandler.HandleStream)
 
