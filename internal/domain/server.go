@@ -7,8 +7,9 @@ import "time"
 type FirewallConfig struct {
 	EnableNAT        bool   `json:"enable_nat"`
 	EnableForwarding bool   `json:"enable_forwarding"`
-	NATSource        string `json:"nat_source"`        // CIDR for POSTROUTING; defaults to server Address
-	NATOutInterface  string `json:"nat_out_interface"`  // outbound interface glob; defaults to "eth+"
+	AllowPeerToPeer  bool   `json:"allow_peer_to_peer"` // when false (default), drops wg→wg traffic to isolate peers
+	NATSource        string `json:"nat_source"`          // CIDR for POSTROUTING; defaults to server Address
+	NATOutInterface  string `json:"nat_out_interface"`   // outbound interface glob; defaults to "eth+"
 }
 
 type ServerConfig struct {

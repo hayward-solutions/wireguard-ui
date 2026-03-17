@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -70,11 +71,20 @@ func (rl *RateLimiter) cleanup() {
 	}
 }
 
+// clientIP extracts just the IP address from r.RemoteAddr, stripping the port.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
 // IPRateLimitMiddleware returns chi middleware that rate-limits by client IP.
 func IPRateLimitMiddleware(limiter *RateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !limiter.Allow(r.RemoteAddr) {
+			if !limiter.Allow(clientIP(r)) {
 				w.Header().Set("Retry-After", strconv.Itoa(1))
 				http.Error(w, `{"error":{"code":"RATE_LIMITED","message":"too many requests"}}`, http.StatusTooManyRequests)
 				return

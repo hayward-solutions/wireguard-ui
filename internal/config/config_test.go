@@ -8,16 +8,16 @@ import (
 // setProductionEnv sets the minimum environment variables for a valid production config.
 func setProductionEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("JWT_SECRET", "jwt-secret-value")
+	t.Setenv("JWT_SECRET", "jwt-secret-value!")
 	t.Setenv("WG_ENDPOINT", "vpn.example.com:51820")
-	t.Setenv("ADMIN_PASSWORD", "admin-password")
-	t.Setenv("ENCRYPTION_KEY", "encryption-key-value")
+	t.Setenv("ADMIN_PASSWORD", "admin-password!")
+	t.Setenv("ENCRYPTION_KEY", "encryption-key-val")
 	t.Setenv("WG_MOCK_MODE", "false")
 }
 
 func TestEncryptionKeyEqualsJWTSecretFails(t *testing.T) {
 	setProductionEnv(t)
-	t.Setenv("ENCRYPTION_KEY", "jwt-secret-value") // same as JWT_SECRET
+	t.Setenv("ENCRYPTION_KEY", "jwt-secret-value!") // same as JWT_SECRET
 
 	_, err := Load()
 	if err == nil {
@@ -41,20 +41,20 @@ func TestEncryptionKeyDifferentPasses(t *testing.T) {
 	}
 }
 
-func TestEmptyEncryptionKeyFails(t *testing.T) {
+func TestEmptyEncryptionKeyRejectedInProduction(t *testing.T) {
 	setProductionEnv(t)
 	t.Setenv("ENCRYPTION_KEY", "")
 
 	_, err := Load()
 	if err == nil {
-		t.Fatal("expected error when ENCRYPTION_KEY is empty")
+		t.Fatal("expected error when ENCRYPTION_KEY is empty in production mode")
 	}
 	if !strings.Contains(err.Error(), "ENCRYPTION_KEY is not set") {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
 
-func TestNoJWTSecretFallback(t *testing.T) {
+func TestEncryptionKeyDoesNotFallBackToJWTSecret(t *testing.T) {
 	setProductionEnv(t)
 
 	cfg, err := Load()
@@ -68,8 +68,97 @@ func TestNoJWTSecretFallback(t *testing.T) {
 	}
 }
 
+// setMockEnv sets the minimum environment variables for a valid mock-mode config
+// with a loopback listen address (safe default for tests).
+func setMockEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("WG_MOCK_MODE", "true")
+	t.Setenv("LISTEN_ADDR", "127.0.0.1:8080")
+	t.Setenv("JWT_SECRET", "")
+	t.Setenv("WG_ENDPOINT", "")
+	t.Setenv("ADMIN_PASSWORD", "")
+	t.Setenv("ENCRYPTION_KEY", "")
+}
+
+func TestIsLoopbackAddr(t *testing.T) {
+	tests := []struct {
+		addr string
+		want bool
+	}{
+		{"127.0.0.1:8080", true},
+		{"localhost:8080", true},
+		{"[::1]:8080", true},
+		{":8080", false},
+		{"0.0.0.0:8080", false},
+		{"192.168.1.1:8080", false},
+		{"10.0.0.1:443", false},
+		{"invalid", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.addr, func(t *testing.T) {
+			if got := isLoopbackAddr(tt.addr); got != tt.want {
+				t.Errorf("isLoopbackAddr(%q) = %v, want %v", tt.addr, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMockModeLoopbackAllowed(t *testing.T) {
+	setMockEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("expected mock mode with loopback to succeed: %v", err)
+	}
+	if cfg.JWTSecret != "dev-secret-change-me" {
+		t.Errorf("expected auto-filled JWTSecret, got %q", cfg.JWTSecret)
+	}
+}
+
+func TestMockModePublicDenied(t *testing.T) {
+	setMockEnv(t)
+	t.Setenv("LISTEN_ADDR", ":8080")
+
+	old := devBuild
+	devBuild = ""
+	t.Cleanup(func() { devBuild = old })
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when mock mode binds to public address")
+	}
+	if !strings.Contains(err.Error(), "mock mode refuses to bind") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestMockModePublicAllowedWithDevBuild(t *testing.T) {
+	setMockEnv(t)
+	t.Setenv("LISTEN_ADDR", ":8080")
+
+	old := devBuild
+	devBuild = "true"
+	t.Cleanup(func() { devBuild = old })
+
+	_, err := Load()
+	if err != nil {
+		t.Fatalf("expected mock mode with devBuild to allow public bind: %v", err)
+	}
+}
+
+func TestProductionModeUnaffectedByBindCheck(t *testing.T) {
+	setProductionEnv(t)
+	t.Setenv("LISTEN_ADDR", "0.0.0.0:8080")
+
+	_, err := Load()
+	if err != nil {
+		t.Fatalf("production mode should not check bind address: %v", err)
+	}
+}
+
 func TestEncryptionKeyDistinctInMockMode(t *testing.T) {
 	t.Setenv("WG_MOCK_MODE", "true")
+	t.Setenv("LISTEN_ADDR", "127.0.0.1:8080")
 	t.Setenv("JWT_SECRET", "same-value")
 	t.Setenv("ENCRYPTION_KEY", "same-value")
 	t.Setenv("WG_ENDPOINT", "")
@@ -81,18 +170,113 @@ func TestEncryptionKeyDistinctInMockMode(t *testing.T) {
 	}
 }
 
-func TestMockModeDefaultEncryptionKey(t *testing.T) {
-	t.Setenv("WG_MOCK_MODE", "true")
-	t.Setenv("JWT_SECRET", "")
+func TestWeakJWTSecretRejected(t *testing.T) {
+	setProductionEnv(t)
+	t.Setenv("JWT_SECRET", "changeme")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for weak JWT_SECRET")
+	}
+	if !strings.Contains(err.Error(), "well-known weak value") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestWeakAdminPasswordRejected(t *testing.T) {
+	setProductionEnv(t)
+	t.Setenv("ADMIN_PASSWORD", "changeme")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for weak ADMIN_PASSWORD")
+	}
+	if !strings.Contains(err.Error(), "well-known weak value") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestWeakEncryptionKeyRejected(t *testing.T) {
+	setProductionEnv(t)
+	t.Setenv("ENCRYPTION_KEY", "changeme")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for weak ENCRYPTION_KEY")
+	}
+	if !strings.Contains(err.Error(), "well-known weak value") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestShortJWTSecretRejected(t *testing.T) {
+	setProductionEnv(t)
+	t.Setenv("JWT_SECRET", "tooshort")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for short JWT_SECRET")
+	}
+	if !strings.Contains(err.Error(), "at least 16 characters") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestShortEncryptionKeyRejected(t *testing.T) {
+	setProductionEnv(t)
+	t.Setenv("ENCRYPTION_KEY", "tooshort")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for short ENCRYPTION_KEY")
+	}
+	if !strings.Contains(err.Error(), "at least 16 characters") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestMissingEncryptionKeyRejected(t *testing.T) {
+	setProductionEnv(t)
 	t.Setenv("ENCRYPTION_KEY", "")
-	t.Setenv("WG_ENDPOINT", "")
-	t.Setenv("ADMIN_PASSWORD", "")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for missing ENCRYPTION_KEY")
+	}
+	if !strings.Contains(err.Error(), "ENCRYPTION_KEY is not set") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestMockModeAllowsEmptySecrets(t *testing.T) {
+	setMockEnv(t)
 
 	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		t.Fatalf("mock mode should not reject empty secrets: %v", err)
+	}
+	if cfg.JWTSecret == "" {
+		t.Error("expected mock mode to set JWTSecret fallback")
+	}
+	if cfg.AdminPassword == "" {
+		t.Error("expected mock mode to set AdminPassword fallback")
 	}
 	if cfg.EncryptionKey == "" {
-		t.Error("expected mock mode to set a default EncryptionKey")
+		t.Error("expected mock mode to set EncryptionKey fallback")
+	}
+}
+
+func TestStrongSecretsPass(t *testing.T) {
+	setProductionEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("expected valid config to pass: %v", err)
+	}
+	if cfg.JWTSecret != "jwt-secret-value!" {
+		t.Errorf("unexpected JWTSecret: %q", cfg.JWTSecret)
+	}
+	if cfg.EncryptionKey != "encryption-key-val" {
+		t.Errorf("unexpected EncryptionKey: %q", cfg.EncryptionKey)
 	}
 }
