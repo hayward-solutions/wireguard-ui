@@ -88,12 +88,20 @@ func (h *PeerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, peer)
 }
 
+// createPeerResponse wraps domain.Peer to include the preshared key in the
+// creation response. This is a one-time disclosure (like API token creation).
+type createPeerResponse struct {
+	*domain.Peer
+	PresharedKey string `json:"preshared_key,omitempty"`
+}
+
 func (h *PeerHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name                string `json:"name"`
 		AllowedIPs          string `json:"allowed_ips"`
 		DNS                 string `json:"dns"`
 		PersistentKeepalive int    `json:"persistent_keepalive"`
+		PublicKey           string `json:"public_key"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
@@ -105,12 +113,27 @@ func (h *PeerHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate keys
-	keyPair, err := wireguard.GenerateKeyPair()
-	if err != nil {
-		slog.Error("generate key pair", "error", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to generate keys")
-		return
+	var privateKey, publicKey string
+
+	if req.PublicKey != "" {
+		// Client-side key generation: validate the provided public key.
+		if err := wireguard.ValidatePublicKey(req.PublicKey); err != nil {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid public key: must be a valid base64-encoded 32-byte WireGuard key")
+			return
+		}
+		publicKey = req.PublicKey
+		// Do NOT store the private key — the client holds it.
+		privateKey = ""
+	} else {
+		// Server-side key generation (backward compatible).
+		keyPair, err := wireguard.GenerateKeyPair()
+		if err != nil {
+			slog.Error("generate key pair", "error", err)
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to generate keys")
+			return
+		}
+		privateKey = keyPair.PrivateKey
+		publicKey = keyPair.PublicKey
 	}
 
 	psk, err := wireguard.GeneratePresharedKey()
@@ -131,6 +154,14 @@ func (h *PeerHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list peers")
 		return
+	}
+
+	// Check for duplicate public key.
+	for _, p := range existingPeers {
+		if p.PublicKey == publicKey {
+			writeError(w, http.StatusConflict, "CONFLICT", "a peer with this public key already exists")
+			return
+		}
 	}
 
 	usedAddrs := []string{serverCfg.Address}
@@ -172,8 +203,8 @@ func (h *PeerHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	peer := &domain.Peer{
 		ID:                  uuid.New().String(),
 		Name:                req.Name,
-		PrivateKey:          keyPair.PrivateKey,
-		PublicKey:           keyPair.PublicKey,
+		PrivateKey:          privateKey,
+		PublicKey:           publicKey,
 		PresharedKey:        psk,
 		AllowedIPs:          allowedIPs,
 		Address:             address,
@@ -198,7 +229,10 @@ func (h *PeerHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.reloadACL(r)
-	writeJSON(w, http.StatusCreated, peer)
+	writeJSON(w, http.StatusCreated, createPeerResponse{
+		Peer:         peer,
+		PresharedKey: psk,
+	})
 }
 
 func (h *PeerHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {

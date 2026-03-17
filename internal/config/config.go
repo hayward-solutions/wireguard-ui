@@ -160,6 +160,9 @@ func (c *Config) validate() error {
 		if c.AdminPassword == "" {
 			c.AdminPassword = "admin"
 		}
+		if c.EncryptionKey == "" {
+			c.EncryptionKey = "dev-encryption-key-change-me"
+		}
 		if len(c.CORSOrigins) == 0 {
 			c.CORSOrigins = []string{"*"}
 		}
@@ -168,6 +171,9 @@ func (c *Config) validate() error {
 
 	if c.JWTSecret == "" {
 		return fmt.Errorf("required environment variable JWT_SECRET is not set")
+	}
+	if c.EncryptionKey == "" {
+		return fmt.Errorf("required environment variable ENCRYPTION_KEY is not set; it is required to encrypt peer private keys at rest")
 	}
 	if c.WGEndpoint == "" {
 		return fmt.Errorf("required environment variable WG_ENDPOINT is not set")

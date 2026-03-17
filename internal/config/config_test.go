@@ -11,8 +11,7 @@ func setProductionEnv(t *testing.T) {
 	t.Setenv("JWT_SECRET", "jwt-secret-value")
 	t.Setenv("WG_ENDPOINT", "vpn.example.com:51820")
 	t.Setenv("ADMIN_PASSWORD", "admin-password")
-	// Clear any leftover values.
-	t.Setenv("ENCRYPTION_KEY", "")
+	t.Setenv("ENCRYPTION_KEY", "encryption-key-value")
 	t.Setenv("WG_MOCK_MODE", "false")
 }
 
@@ -42,22 +41,21 @@ func TestEncryptionKeyDifferentPasses(t *testing.T) {
 	}
 }
 
-func TestEmptyEncryptionKeyAllowed(t *testing.T) {
+func TestEmptyEncryptionKeyFails(t *testing.T) {
 	setProductionEnv(t)
 	t.Setenv("ENCRYPTION_KEY", "")
 
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when ENCRYPTION_KEY is empty")
 	}
-	if cfg.EncryptionKey != "" {
-		t.Errorf("got EncryptionKey %q, want empty", cfg.EncryptionKey)
+	if !strings.Contains(err.Error(), "ENCRYPTION_KEY is not set") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 
 func TestNoJWTSecretFallback(t *testing.T) {
 	setProductionEnv(t)
-	t.Setenv("ENCRYPTION_KEY", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -66,10 +64,7 @@ func TestNoJWTSecretFallback(t *testing.T) {
 
 	// EncryptionKey must NOT fall back to JWTSecret.
 	if cfg.EncryptionKey == cfg.JWTSecret {
-		t.Errorf("EncryptionKey %q should not fall back to JWTSecret %q", cfg.EncryptionKey, cfg.JWTSecret)
-	}
-	if cfg.EncryptionKey != "" {
-		t.Errorf("got EncryptionKey %q, want empty", cfg.EncryptionKey)
+		t.Errorf("EncryptionKey %q should not equal JWTSecret %q", cfg.EncryptionKey, cfg.JWTSecret)
 	}
 }
 
@@ -83,5 +78,21 @@ func TestEncryptionKeyDistinctInMockMode(t *testing.T) {
 	_, err := Load()
 	if err == nil {
 		t.Fatal("expected error when ENCRYPTION_KEY equals JWT_SECRET even in mock mode")
+	}
+}
+
+func TestMockModeDefaultEncryptionKey(t *testing.T) {
+	t.Setenv("WG_MOCK_MODE", "true")
+	t.Setenv("JWT_SECRET", "")
+	t.Setenv("ENCRYPTION_KEY", "")
+	t.Setenv("WG_ENDPOINT", "")
+	t.Setenv("ADMIN_PASSWORD", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.EncryptionKey == "" {
+		t.Error("expected mock mode to set a default EncryptionKey")
 	}
 }
