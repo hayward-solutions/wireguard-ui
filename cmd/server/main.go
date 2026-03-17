@@ -285,6 +285,7 @@ func run() error {
 		RequireHTTPS:        cfg.RequireHTTPS,
 		AllowCustomScripts:  cfg.AllowCustomScripts,
 		CORSOrigins:         cfg.CORSOrigins,
+		TrustedProxies:      cfg.TrustedProxies,
 	})
 
 	// Start HTTP server
