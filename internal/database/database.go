@@ -79,6 +79,9 @@ type Store interface {
 	UpdateTunnel(ctx context.Context, t *domain.Tunnel) error
 	DeleteTunnel(ctx context.Context, id string) error
 
+	// Encryption
+	HasEncryptedData(ctx context.Context) (bool, error)
+
 	// Lifecycle
 	Migrate(ctx context.Context) error
 	Close() error
