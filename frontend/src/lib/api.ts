@@ -105,8 +105,8 @@ class APIClient {
 		return this.request<Peer>('GET', `/api/v1/peers/${id}`);
 	}
 
-	async createPeer(data: { name: string; allowed_ips?: string; dns?: string }) {
-		return this.request<Peer>('POST', '/api/v1/peers', data);
+	async createPeer(data: { name: string; allowed_ips?: string; dns?: string; public_key?: string }) {
+		return this.request<CreatePeerResponse>('POST', '/api/v1/peers', data);
 	}
 
 	async updatePeer(id: string, data: Partial<Peer>) {
@@ -318,6 +318,10 @@ export interface ACLRule {
 	enabled: boolean;
 	created_at: string;
 	updated_at: string;
+}
+
+export interface CreatePeerResponse extends Peer {
+	preshared_key?: string;
 }
 
 export interface PeerStats {

@@ -23,6 +23,11 @@ func (h *ExportHandler) HandleConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if peer.PrivateKey == "" {
+		writeError(w, http.StatusBadRequest, "CLIENT_KEY", "config export unavailable: this peer's private key was generated client-side and is not stored on the server")
+		return
+	}
+
 	server, err := h.store.GetServerConfig(r.Context())
 	if err != nil || server == nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "server not configured")
@@ -40,12 +45,18 @@ func (h *ExportHandler) HandleConfig(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.conf"`, peer.Name))
+	w.Header().Set("Cache-Control", "no-store")
 	w.Write([]byte(conf))
 }
 
 func (h *ExportHandler) HandleQRCode(w http.ResponseWriter, r *http.Request) {
 	peer, _ := requirePeerAccess(h.store, w, r)
 	if peer == nil {
+		return
+	}
+
+	if peer.PrivateKey == "" {
+		writeError(w, http.StatusBadRequest, "CLIENT_KEY", "QR export unavailable: this peer's private key was generated client-side and is not stored on the server")
 		return
 	}
 
@@ -72,5 +83,6 @@ func (h *ExportHandler) HandleQRCode(w http.ResponseWriter, r *http.Request) {
 	slog.Warn("audit", "action", "peer_qrcode_exported", "actor", actorFromRequest(r), "target_id", peer.ID, "target_name", peer.Name)
 
 	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
 	w.Write(png)
 }

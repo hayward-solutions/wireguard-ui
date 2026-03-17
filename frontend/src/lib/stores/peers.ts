@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import { api, type Peer } from '$lib/api';
+import { api, type Peer, type CreatePeerResponse } from '$lib/api';
 
 export const peers = writable<Peer[]>([]);
 export const peersLoading = writable(false);
@@ -16,10 +16,10 @@ export async function loadPeers() {
 	}
 }
 
-export async function createPeer(name: string, allowed_ips?: string, dns?: string) {
-	const peer = await api.createPeer({ name, allowed_ips, dns });
-	peers.update((p) => [peer, ...p]);
-	return peer;
+export async function createPeer(name: string, allowed_ips?: string, dns?: string, public_key?: string): Promise<CreatePeerResponse> {
+	const response = await api.createPeer({ name, allowed_ips, dns, public_key });
+	peers.update((p) => [response, ...p]);
+	return response;
 }
 
 export async function deletePeer(id: string) {

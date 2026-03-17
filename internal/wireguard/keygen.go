@@ -31,3 +31,12 @@ func GeneratePresharedKey() (string, error) {
 	}
 	return key.String(), nil
 }
+
+// ValidatePublicKey checks that a base64-encoded string is a valid WireGuard key.
+func ValidatePublicKey(key string) error {
+	_, err := wgtypes.ParseKey(key)
+	if err != nil {
+		return fmt.Errorf("invalid WireGuard public key: %w", err)
+	}
+	return nil
+}
