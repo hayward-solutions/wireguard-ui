@@ -34,6 +34,13 @@ func ApplyFirewallRules(cfg *domain.FirewallConfig, serverAddress, interfaceName
 	}
 
 	if cfg.EnableForwarding {
+		// When peer isolation is enabled (default), drop peer-to-peer traffic
+		// (wg→wg) before adding the broader ACCEPT rules.
+		if !cfg.AllowPeerToPeer {
+			if err := iptables("-A", "FORWARD", "-i", interfaceName, "-o", interfaceName, "-j", "DROP"); err != nil {
+				return fmt.Errorf("add peer-isolation rule: %w", err)
+			}
+		}
 		if err := iptables("-A", "FORWARD", "-i", interfaceName, "-j", "ACCEPT"); err != nil {
 			return fmt.Errorf("add forward-in rule: %w", err)
 		}
@@ -45,6 +52,7 @@ func ApplyFirewallRules(cfg *domain.FirewallConfig, serverAddress, interfaceName
 	slog.Info("firewall rules applied",
 		"nat", cfg.EnableNAT,
 		"forwarding", cfg.EnableForwarding,
+		"allow_peer_to_peer", cfg.AllowPeerToPeer,
 		"source", source,
 		"out_interface", outIface,
 		"wg_interface", interfaceName)
@@ -73,6 +81,11 @@ func RemoveFirewallRules(cfg *domain.FirewallConfig, serverAddress, interfaceNam
 	}
 
 	if cfg.EnableForwarding {
+		if !cfg.AllowPeerToPeer {
+			if err := iptables("-D", "FORWARD", "-i", interfaceName, "-o", interfaceName, "-j", "DROP"); err != nil {
+				slog.Warn("failed to remove peer-isolation rule", "error", err)
+			}
+		}
 		if err := iptables("-D", "FORWARD", "-i", interfaceName, "-j", "ACCEPT"); err != nil {
 			slog.Warn("failed to remove forward-in rule", "error", err)
 		}
@@ -84,6 +97,7 @@ func RemoveFirewallRules(cfg *domain.FirewallConfig, serverAddress, interfaceNam
 	slog.Info("firewall rules removed",
 		"nat", cfg.EnableNAT,
 		"forwarding", cfg.EnableForwarding,
+		"allow_peer_to_peer", cfg.AllowPeerToPeer,
 		"wg_interface", interfaceName)
 	return nil
 }
