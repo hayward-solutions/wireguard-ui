@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend build test lint docker clean
+.PHONY: dev dev-backend dev-frontend build test test-vpn lint docker clean
 
 # Run both frontend and backend with hot reload
 dev:
@@ -26,6 +26,14 @@ test:
 
 test-frontend:
 	cd frontend && npm test
+
+# Integration test: verify WireGuard netstack tunnel works without NET_ADMIN
+test-vpn:
+	docker compose -f tests/integration/docker-compose.test.yml build
+	docker compose -f tests/integration/docker-compose.test.yml up --abort-on-container-exit --exit-code-from wg-client; \
+	  EXIT_CODE=$$?; \
+	  docker compose -f tests/integration/docker-compose.test.yml down -v; \
+	  exit $$EXIT_CODE
 
 # Lint
 lint:

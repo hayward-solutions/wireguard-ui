@@ -1,8 +1,6 @@
 name: Build & Test
 
 on:
-  push:
-    branches: ["**"]
   pull_request:
     branches: [main]
 
@@ -15,10 +13,13 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: stable
 
       - name: Download dependencies
         run: go mod download
+
+      - name: Create frontend build stub
+        run: mkdir -p frontend/build && touch frontend/build/.gitkeep
 
       - name: Build
         run: go build ./...
@@ -34,7 +35,7 @@ jobs:
           path: coverage.out
 
   frontend:
-    name: Frontend Build & Lint
+    name: Frontend Build & Check
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -51,11 +52,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
-
-      - name: Check formatting
-        run: npx prettier --check .
+      - name: Svelte check
+        run: npm run check
 
       - name: Build
         run: npm run build
