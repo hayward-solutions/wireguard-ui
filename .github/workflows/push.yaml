@@ -59,9 +59,17 @@ jobs:
         run: npm run build
 
   docker:
-    name: Docker Build
-    runs-on: ubuntu-latest
+    name: Docker Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
     needs: [backend, frontend]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
 
@@ -72,5 +80,6 @@ jobs:
         with:
           context: .
           push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          platforms: ${{ matrix.platform }}
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,scope=${{ matrix.platform }},mode=max
