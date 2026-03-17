@@ -206,8 +206,9 @@ func run() error {
 		OIDCProvider: oidcProvider,
 		Monitor:      mon,
 		FrontendFS:   frontendFS,
-		DevMode:      cfg.DevMode,
-		AdminAPIKey:  cfg.AdminAPIKey,
+		DevMode:        cfg.DevMode,
+		AdminAPIKey:    cfg.AdminAPIKey,
+		OIDCAdminGroup: cfg.OIDCAdminGroup,
 	})
 
 	// Start HTTP server

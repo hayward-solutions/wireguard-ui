@@ -16,6 +16,8 @@ services:
       - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
       - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
       - OIDC_REDIRECT_URL=${OIDC_REDIRECT_URL:-http://localhost:8080/auth/callback}
+      # OIDC group whose members are granted admin (new users default to viewer)
+      - OIDC_ADMIN_GROUP=${OIDC_ADMIN_GROUP:-}
       # JWT
       - JWT_SECRET=${JWT_SECRET:-changeme}
       # WireGuard

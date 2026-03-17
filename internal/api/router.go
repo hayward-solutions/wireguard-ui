@@ -20,8 +20,9 @@ type RouterConfig struct {
 	OIDCProvider *auth.OIDCProvider
 	Monitor      *monitor.Monitor
 	FrontendFS   fs.FS
-	DevMode      bool
-	AdminAPIKey  string
+	DevMode        bool
+	AdminAPIKey    string
+	OIDCAdminGroup string
 }
 
 func NewRouter(cfg RouterConfig) *chi.Mux {
@@ -41,9 +42,10 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 	}))
 
 	authHandler := NewAuthHandler(AuthHandlerConfig{
-		OIDC:  cfg.OIDCProvider,
-		JWT:   cfg.JWTManager,
-		Store: cfg.Store,
+		OIDC:           cfg.OIDCProvider,
+		JWT:            cfg.JWTManager,
+		Store:          cfg.Store,
+		OIDCAdminGroup: cfg.OIDCAdminGroup,
 	})
 
 	// Health check (unauthenticated)
