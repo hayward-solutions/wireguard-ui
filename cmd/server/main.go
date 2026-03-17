@@ -254,6 +254,9 @@ func run() error {
 				if err := store.CleanExpiredSessions(context.Background()); err != nil {
 					slog.Error("failed to clean expired sessions", "error", err)
 				}
+				if err := store.DeleteExpiredAPITokens(context.Background()); err != nil {
+					slog.Error("failed to clean expired API tokens", "error", err)
+				}
 			}
 		}
 	}()
@@ -295,6 +298,7 @@ func run() error {
 		SessionExpiry:       cfg.SessionExpiry,
 		DevMode:             cfg.DevMode,
 		AdminAPIKey:         cfg.AdminAPIKey,
+		APITokenMaxLifetime: cfg.APITokenMaxLifetime,
 		OIDCAdminGroup:      cfg.OIDCAdminGroup,
 		RequireHTTPS:        cfg.RequireHTTPS,
 		AllowCustomScripts:  cfg.AllowCustomScripts,

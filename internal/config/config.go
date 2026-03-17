@@ -59,6 +59,9 @@ type Config struct {
 	// Monitoring
 	StatsInterval time.Duration
 
+	// API Tokens
+	APITokenMaxLifetime time.Duration
+
 	// Security
 	RequireHTTPS       bool
 	AllowCustomScripts bool
@@ -151,8 +154,21 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid STATS_INTERVAL: %w", err)
 	}
 
+	tokenLifetimeStr := envOrDefault("API_TOKEN_MAX_LIFETIME", "2160h") // 90 days
+	cfg.APITokenMaxLifetime, err = time.ParseDuration(tokenLifetimeStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid API_TOKEN_MAX_LIFETIME: %w", err)
+	}
+	if cfg.APITokenMaxLifetime <= 0 {
+		return nil, fmt.Errorf("API_TOKEN_MAX_LIFETIME must be positive")
+	}
+
 	if cfg.OIDCRedirectURL == "" {
 		cfg.OIDCRedirectURL = cfg.BaseURL + "/auth/callback"
+	}
+
+	if cfg.AdminAPIKey != "" {
+		slog.Warn("ADMIN_API_KEY is deprecated and will be removed in a future release; create per-user API tokens instead")
 	}
 
 	if err := cfg.validate(); err != nil {

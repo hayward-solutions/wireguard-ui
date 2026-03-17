@@ -35,6 +35,7 @@ type Store interface {
 	GetAPITokenByHash(ctx context.Context, tokenHash string) (*domain.APIToken, error)
 	CreateAPIToken(ctx context.Context, token *domain.APIToken) error
 	DeleteAPIToken(ctx context.Context, id string) error
+	DeleteExpiredAPITokens(ctx context.Context) error
 	UpdateAPITokenLastUsed(ctx context.Context, id string) error
 
 	// Groups
