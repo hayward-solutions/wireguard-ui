@@ -602,6 +602,14 @@ func (s *PostgresStore) DeleteAPIToken(ctx context.Context, id string) error {
 	return nil
 }
 
+func (s *PostgresStore) DeleteExpiredAPITokens(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM api_tokens WHERE expires_at IS NOT NULL AND expires_at < NOW()`)
+	if err != nil {
+		return fmt.Errorf("delete expired api tokens: %w", err)
+	}
+	return nil
+}
+
 func (s *PostgresStore) UpdateAPITokenLastUsed(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE api_tokens SET last_used = $1 WHERE id = $2`, time.Now(), id)
 	if err != nil {

@@ -181,6 +181,7 @@ func (s *mockStore) GetSession(_ context.Context, _ string) (*domain.Session, er
 func (s *mockStore) RevokeSession(_ context.Context, _ string) error      { return nil }
 func (s *mockStore) RevokeUserSessions(_ context.Context, _ string) error { return nil }
 func (s *mockStore) CleanExpiredSessions(_ context.Context) error         { return nil }
+func (s *mockStore) DeleteExpiredAPITokens(_ context.Context) error       { return nil }
 
 func (s *mockStore) ListTunnels(_ context.Context) ([]domain.Tunnel, error)       { return nil, nil }
 func (s *mockStore) GetTunnel(_ context.Context, _ string) (*domain.Tunnel, error) { return nil, nil }

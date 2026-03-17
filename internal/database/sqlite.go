@@ -595,6 +595,14 @@ func (s *SQLiteStore) DeleteAPIToken(ctx context.Context, id string) error {
 	return nil
 }
 
+func (s *SQLiteStore) DeleteExpiredAPITokens(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM api_tokens WHERE expires_at IS NOT NULL AND expires_at < ?`, time.Now())
+	if err != nil {
+		return fmt.Errorf("delete expired api tokens: %w", err)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) UpdateAPITokenLastUsed(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE api_tokens SET last_used = ? WHERE id = ?`, time.Now(), id)
 	if err != nil {

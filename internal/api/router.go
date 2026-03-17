@@ -29,7 +29,8 @@ type RouterConfig struct {
 	PasswordRateLimiter *auth.RateLimiter
 	SessionExpiry      time.Duration
 	DevMode            bool
-	AdminAPIKey        string
+	AdminAPIKey         string
+	APITokenMaxLifetime time.Duration
 	OIDCAdminGroup     string
 	RequireHTTPS       bool
 	AllowCustomScripts bool
@@ -131,7 +132,7 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 			r.Post("/api/v1/me/password", userHandler.HandleChangePassword)
 		}
 
-		tokenHandler := NewTokenHandler(cfg.Store)
+		tokenHandler := NewTokenHandler(cfg.Store, cfg.APITokenMaxLifetime)
 		r.Get("/api/v1/me/tokens", tokenHandler.HandleList)
 		r.Post("/api/v1/me/tokens", tokenHandler.HandleCreate)
 		r.Delete("/api/v1/me/tokens/{id}", tokenHandler.HandleDelete)
