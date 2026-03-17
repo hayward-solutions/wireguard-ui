@@ -160,6 +160,9 @@ func (c *Config) validate() error {
 		if c.AdminPassword == "" {
 			c.AdminPassword = "admin"
 		}
+		if c.EncryptionKey == "" {
+			c.EncryptionKey = "dev-encryption-key-00"
+		}
 		if len(c.CORSOrigins) == 0 {
 			c.CORSOrigins = []string{"*"}
 		}
@@ -168,6 +171,9 @@ func (c *Config) validate() error {
 
 	if c.JWTSecret == "" {
 		return fmt.Errorf("required environment variable JWT_SECRET is not set")
+	}
+	if c.EncryptionKey == "" {
+		return fmt.Errorf("required environment variable ENCRYPTION_KEY is not set")
 	}
 	if c.WGEndpoint == "" {
 		return fmt.Errorf("required environment variable WG_ENDPOINT is not set")
@@ -178,6 +184,28 @@ func (c *Config) validate() error {
 	hasLocal := c.AdminPassword != ""
 	if !hasOIDC && !hasLocal {
 		return fmt.Errorf("must configure either OIDC (OIDC_ISSUER_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET) or local auth (ADMIN_PASSWORD)")
+	}
+
+	// Reject well-known weak values.
+	weakValues := []string{"changeme", "secret", "password", "admin", "test", "dev-secret-change-me"}
+	for _, weak := range weakValues {
+		if c.JWTSecret == weak {
+			return fmt.Errorf("JWT_SECRET is set to a well-known weak value %q; choose a strong, unique secret", weak)
+		}
+		if c.AdminPassword == weak {
+			return fmt.Errorf("ADMIN_PASSWORD is set to a well-known weak value %q; choose a strong password", weak)
+		}
+		if c.EncryptionKey == weak {
+			return fmt.Errorf("ENCRYPTION_KEY is set to a well-known weak value %q; choose a strong, unique key", weak)
+		}
+	}
+
+	// Enforce minimum length for cryptographic secrets.
+	if len(c.JWTSecret) < 16 {
+		return fmt.Errorf("JWT_SECRET must be at least 16 characters (got %d)", len(c.JWTSecret))
+	}
+	if len(c.EncryptionKey) < 16 {
+		return fmt.Errorf("ENCRYPTION_KEY must be at least 16 characters (got %d)", len(c.EncryptionKey))
 	}
 
 	return nil

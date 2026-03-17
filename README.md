@@ -22,19 +22,24 @@ A self-hosted WireGuard VPN management interface with a clean web UI, REST API, 
 
 ## Quick Start
 
+Create a `.env` file with the required secrets (see `.env.example`):
+
+```env
+ADMIN_PASSWORD=your-secure-password
+JWT_SECRET=your-random-jwt-secret    # min 16 characters
+ENCRYPTION_KEY=your-encryption-key   # min 16 characters, must differ from JWT_SECRET
+WG_ENDPOINT=vpn.example.com:51820
+```
+
+Then start the stack:
+
 ```bash
 docker compose up -d
 ```
 
-Open [http://localhost:8080](http://localhost:8080) and log in with `admin` / `changeme`.
+Open [http://localhost:8080](http://localhost:8080) and log in with the `admin` username and the password you configured.
 
-For production, create a `.env` file:
-
-```env
-ADMIN_PASSWORD=your-secure-password
-JWT_SECRET=your-random-secret
-WG_ENDPOINT=vpn.example.com:51820
-```
+> **Note:** The app rejects well-known weak values (e.g. `changeme`, `password`, `secret`) and enforces minimum lengths for cryptographic secrets. It will refuse to start if secrets are missing or weak.
 
 ### Serverless / Fargate Deployment
 
@@ -54,9 +59,12 @@ All configuration is via environment variables.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `JWT_SECRET` | Secret for signing JWT tokens | — |
+| `JWT_SECRET` | Secret for signing JWT tokens (min 16 chars) | — |
+| `ENCRYPTION_KEY` | Key for at-rest encryption of peer private keys (min 16 chars, must differ from `JWT_SECRET`) | — |
 | `WG_ENDPOINT` | Public hostname or host:port for client configs | — |
 | `ADMIN_PASSWORD` | Local admin password (required if OIDC not configured) | — |
+
+> Weak or well-known values (e.g. `changeme`, `password`, `secret`) are rejected at startup.
 
 ### Server
 
@@ -103,7 +111,6 @@ All configuration is via environment variables.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ENCRYPTION_KEY` | Key for at-rest encryption (must differ from JWT_SECRET) | — |
 | `REQUIRE_HTTPS` | Enforce HTTPS redirect on all requests | `false` |
 | `CORS_ORIGINS` | Comma-separated allowed origins for CORS | — |
 | `ALLOW_CUSTOM_SCRIPTS` | Allow raw PostUp/PostDown shell scripts in server config | `false` |
@@ -127,8 +134,9 @@ services:
       - "8080:8080"
       - "51820:51820/udp"
     environment:
-      - ADMIN_PASSWORD=changeme
-      - JWT_SECRET=changeme
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - WG_ENDPOINT=vpn.example.com:51820
     cap_add:
       - NET_ADMIN
