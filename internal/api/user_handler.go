@@ -3,9 +3,11 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
+	"unicode"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -14,6 +16,31 @@ import (
 	"github.com/hayward-solutions/wireguard-ui/internal/domain"
 	"golang.org/x/crypto/bcrypt"
 )
+
+const minPasswordLength = 8
+
+// validatePassword enforces minimum length and basic strength rules.
+// Requires at least one uppercase letter, one lowercase letter, and one digit.
+func validatePassword(password string) error {
+	if len(password) < minPasswordLength {
+		return fmt.Errorf("password must be at least %d characters", minPasswordLength)
+	}
+	var hasUpper, hasLower, hasDigit bool
+	for _, r := range password {
+		switch {
+		case unicode.IsUpper(r):
+			hasUpper = true
+		case unicode.IsLower(r):
+			hasLower = true
+		case unicode.IsDigit(r):
+			hasDigit = true
+		}
+	}
+	if !hasUpper || !hasLower || !hasDigit {
+		return fmt.Errorf("password must contain at least one uppercase letter, one lowercase letter, and one digit")
+	}
+	return nil
+}
 
 type UserHandler struct {
 	store database.Store
@@ -66,6 +93,10 @@ func (h *UserHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 	if req.Username == "" || req.Password == "" {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "username and password are required")
+		return
+	}
+	if err := validatePassword(req.Password); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
 
@@ -204,6 +235,10 @@ func (h *UserHandler) HandleResetPassword(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "password is required")
 		return
 	}
+	if err := validatePassword(req.Password); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -214,6 +249,10 @@ func (h *UserHandler) HandleResetPassword(w http.ResponseWriter, r *http.Request
 	if err := h.store.UpdateUserPassword(r.Context(), id, string(hash)); err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to reset password")
 		return
+	}
+
+	if err := h.store.RevokeUserSessions(r.Context(), id); err != nil {
+		slog.Error("failed to revoke sessions after password reset", "error", err, "target_id", id)
 	}
 
 	slog.Warn("audit", "action", "password_reset", "actor", claims.Subject, "target_id", id)
@@ -240,6 +279,10 @@ func (h *UserHandler) HandleChangePassword(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "current_password and new_password are required")
 		return
 	}
+	if err := validatePassword(req.NewPassword); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
 
 	user, err := h.store.GetUser(r.Context(), claims.Subject)
 	if err != nil || user == nil {
@@ -261,6 +304,10 @@ func (h *UserHandler) HandleChangePassword(w http.ResponseWriter, r *http.Reques
 	if err := h.store.UpdateUserPassword(r.Context(), user.ID, string(hash)); err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to change password")
 		return
+	}
+
+	if err := h.store.RevokeUserSessions(r.Context(), user.ID); err != nil {
+		slog.Error("failed to revoke sessions after password change", "error", err, "user_id", user.ID)
 	}
 
 	slog.Warn("audit", "action", "password_changed", "actor", claims.Subject)
