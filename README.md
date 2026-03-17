@@ -5,17 +5,19 @@ A self-hosted WireGuard VPN management interface with a clean web UI, REST API, 
 ## Features
 
 - **One-click peer management** — create peers, download configs, scan QR codes
+- **Client-side key generation** — keys generated in the browser so the server never sees peer private keys; server-side generation available as a fallback
 - **Userspace WireGuard** — runs without a kernel module (Docker, Kubernetes, etc.)
 - **gVisor netstack** — fully userspace networking for ECS Fargate and serverless (no `NET_ADMIN` required)
 - **OIDC authentication** — integrate with any OpenID Connect provider, or use local username/password
 - **Role-based access** — three roles: admin (full control), editor (manage own peers), viewer (read-only)
 - **Groups & ACL network policies** — fine-grained L3/L4 network access rules per user or group
+- **Peer isolation by default** — peer-to-peer traffic is denied unless explicitly allowed
 - **REST API** — full CRUD with JWT and API key support for automation
 - **API token self-service** — users can generate their own read-only API tokens
 - **Real-time stats** — live connection status, handshake times, and transfer data via SSE
 - **Single binary** — Go backend with embedded SvelteKit SPA, no external dependencies
 - **Multi-database** — SQLite (default) or PostgreSQL
-- **Encrypted key storage** — peer private keys encrypted at rest with AES-256-GCM
+- **Encrypted key storage** — server-generated peer private keys encrypted at rest with AES-256-GCM; client-generated keys are never stored on the server
 - **Rate limiting & account lockout** — brute-force protection on auth endpoints
 - **Audit logging** — structured JSON logs of auth events and sensitive operations
 - **HTTPS enforcement** — optional automatic HTTPS redirect
@@ -113,6 +115,7 @@ All configuration is via environment variables.
 |----------|-------------|---------|
 | `REQUIRE_HTTPS` | Enforce HTTPS redirect on all requests | `false` |
 | `CORS_ORIGINS` | Comma-separated allowed origins for CORS | — |
+| `TRUSTED_PROXIES` | Comma-separated trusted proxy IPs for forwarded headers | — |
 | `ALLOW_CUSTOM_SCRIPTS` | Allow raw PostUp/PostDown shell scripts in server config | `false` |
 
 ### Other
@@ -317,6 +320,8 @@ frontend/                   # SvelteKit SPA (Tailwind CSS, Svelte 5)
 - **Single binary** — the built SPA is embedded via `go:embed`
 - **Pure Go SQLite** — uses `modernc.org/sqlite`, no CGo required (`CGO_ENABLED=0`)
 - **Structured firewall config** — declarative NAT/masquerade settings replace raw shell scripts by default; `ALLOW_CUSTOM_SCRIPTS=true` re-enables PostUp/PostDown
+- **Peer isolation** — peer-to-peer (wg→wg) traffic is dropped by default; configurable via `AllowPeerToPeer` in the server firewall settings
+- **Client-side key generation** — the browser generates WireGuard keys using X25519 so the server never handles peer private keys; preshared keys are disclosed once at creation time
 - **Peer re-sync** — all enabled peers are re-applied to the WireGuard interface on every startup
 
 ## License
