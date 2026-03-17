@@ -261,60 +261,75 @@ func TestRouteAuthorization(t *testing.T) {
 	}{
 		// --- Server config ---
 		{"admin can read server config", "GET", "/api/v1/server", domain.RoleAdmin, "", http.StatusOK},
+		{"editor can read server config", "GET", "/api/v1/server", domain.RoleEditor, "", http.StatusOK},
 		{"viewer can read server config", "GET", "/api/v1/server", domain.RoleViewer, "", http.StatusOK},
 		{"admin can update server", "PUT", "/api/v1/server", domain.RoleAdmin, `{"listen_port":51820}`, http.StatusOK},
+		{"editor cannot update server", "PUT", "/api/v1/server", domain.RoleEditor, `{"listen_port":51820}`, http.StatusForbidden},
 		{"viewer cannot update server", "PUT", "/api/v1/server", domain.RoleViewer, `{"listen_port":51820}`, http.StatusForbidden},
 		{"admin can apply server", "POST", "/api/v1/server/apply", domain.RoleAdmin, "", http.StatusOK},
+		{"editor cannot apply server", "POST", "/api/v1/server/apply", domain.RoleEditor, "", http.StatusForbidden},
 		{"viewer cannot apply server", "POST", "/api/v1/server/apply", domain.RoleViewer, "", http.StatusForbidden},
 
-		// --- Peer list (both roles can list) ---
+		// --- Peer list (all roles can list) ---
 		{"admin can list peers", "GET", "/api/v1/peers", domain.RoleAdmin, "", http.StatusOK},
+		{"editor can list peers", "GET", "/api/v1/peers", domain.RoleEditor, "", http.StatusOK},
 		{"viewer can list peers", "GET", "/api/v1/peers", domain.RoleViewer, "", http.StatusOK},
 
-		// --- Peer create (admin only) ---
+		// --- Peer create (editor+) ---
 		{"admin can create peer", "POST", "/api/v1/peers", domain.RoleAdmin, `{"name":"new-peer"}`, http.StatusCreated},
+		{"editor can create peer", "POST", "/api/v1/peers", domain.RoleEditor, `{"name":"new-peer"}`, http.StatusCreated},
 		{"viewer cannot create peer", "POST", "/api/v1/peers", domain.RoleViewer, `{"name":"new-peer"}`, http.StatusForbidden},
 
-		// --- Peer get (ownership-checked, both roles) ---
+		// --- Peer get (ownership-checked, all roles) ---
 		{"admin can get peer", "GET", "/api/v1/peers/" + testPeerID, domain.RoleAdmin, "", http.StatusOK},
+		{"editor can get own peer", "GET", "/api/v1/peers/" + testPeerID, domain.RoleEditor, "", http.StatusOK},
 		{"viewer can get own peer", "GET", "/api/v1/peers/" + testPeerID, domain.RoleViewer, "", http.StatusOK},
 
-		// --- Peer update (admin only) ---
+		// --- Peer update (editor+, ownership-checked) ---
 		{"admin can update peer", "PUT", "/api/v1/peers/" + testPeerID, domain.RoleAdmin, `{"name":"updated"}`, http.StatusOK},
+		{"editor can update own peer", "PUT", "/api/v1/peers/" + testPeerID, domain.RoleEditor, `{"name":"updated"}`, http.StatusOK},
 		{"viewer cannot update own peer", "PUT", "/api/v1/peers/" + testPeerID, domain.RoleViewer, `{"name":"updated"}`, http.StatusForbidden},
 
-		// --- Peer delete (admin only) ---
+		// --- Peer delete (editor+, ownership-checked) ---
 		{"admin can delete peer", "DELETE", "/api/v1/peers/" + testPeerID, domain.RoleAdmin, "", http.StatusOK},
+		{"editor can delete own peer", "DELETE", "/api/v1/peers/" + testPeerID, domain.RoleEditor, "", http.StatusOK},
 		{"viewer cannot delete own peer", "DELETE", "/api/v1/peers/" + testPeerID, domain.RoleViewer, "", http.StatusForbidden},
 
-		// --- Peer toggle (admin only) ---
+		// --- Peer toggle (editor+, ownership-checked) ---
 		{"admin can toggle peer", "PATCH", "/api/v1/peers/" + testPeerID + "/toggle", domain.RoleAdmin, "", http.StatusOK},
+		{"editor can toggle own peer", "PATCH", "/api/v1/peers/" + testPeerID + "/toggle", domain.RoleEditor, "", http.StatusOK},
 		{"viewer cannot toggle own peer", "PATCH", "/api/v1/peers/" + testPeerID + "/toggle", domain.RoleViewer, "", http.StatusForbidden},
 
-		// --- Peer export (ownership-checked, both roles) ---
+		// --- Peer export (ownership-checked, all roles) ---
 		{"admin can get peer config", "GET", "/api/v1/peers/" + testPeerID + "/config", domain.RoleAdmin, "", http.StatusOK},
+		{"editor can get own peer config", "GET", "/api/v1/peers/" + testPeerID + "/config", domain.RoleEditor, "", http.StatusOK},
 		{"viewer can get own peer config", "GET", "/api/v1/peers/" + testPeerID + "/config", domain.RoleViewer, "", http.StatusOK},
 
-		// --- Stats (both roles can read) ---
+		// --- Stats (all roles can read) ---
 		{"admin can get stats", "GET", "/api/v1/stats", domain.RoleAdmin, "", http.StatusOK},
+		{"editor can get stats", "GET", "/api/v1/stats", domain.RoleEditor, "", http.StatusOK},
 		{"viewer can get stats", "GET", "/api/v1/stats", domain.RoleViewer, "", http.StatusOK},
 
-		// --- Self-service: tokens (both roles) ---
+		// --- Self-service: tokens (all roles) ---
 		{"admin can list tokens", "GET", "/api/v1/me/tokens", domain.RoleAdmin, "", http.StatusOK},
+		{"editor can list tokens", "GET", "/api/v1/me/tokens", domain.RoleEditor, "", http.StatusOK},
 		{"viewer can list tokens", "GET", "/api/v1/me/tokens", domain.RoleViewer, "", http.StatusOK},
 		{"admin can create token", "POST", "/api/v1/me/tokens", domain.RoleAdmin, `{"name":"my-token"}`, http.StatusCreated},
 		{"viewer can create token", "POST", "/api/v1/me/tokens", domain.RoleViewer, `{"name":"my-token"}`, http.StatusCreated},
 
 		// --- Admin-only: groups ---
 		{"admin can list groups", "GET", "/api/v1/groups/", domain.RoleAdmin, "", http.StatusOK},
+		{"editor cannot list groups", "GET", "/api/v1/groups/", domain.RoleEditor, "", http.StatusForbidden},
 		{"viewer cannot list groups", "GET", "/api/v1/groups/", domain.RoleViewer, "", http.StatusForbidden},
 
 		// --- Admin-only: ACLs ---
 		{"admin can list acls", "GET", "/api/v1/acls/", domain.RoleAdmin, "", http.StatusOK},
+		{"editor cannot list acls", "GET", "/api/v1/acls/", domain.RoleEditor, "", http.StatusForbidden},
 		{"viewer cannot list acls", "GET", "/api/v1/acls/", domain.RoleViewer, "", http.StatusForbidden},
 
 		// --- Admin-only: users ---
 		{"admin can list users", "GET", "/api/v1/users/", domain.RoleAdmin, "", http.StatusOK},
+		{"editor cannot list users", "GET", "/api/v1/users/", domain.RoleEditor, "", http.StatusForbidden},
 		{"viewer cannot list users", "GET", "/api/v1/users/", domain.RoleViewer, "", http.StatusForbidden},
 	}
 
@@ -402,7 +417,7 @@ func TestServerConfigRedaction(t *testing.T) {
 		}
 	})
 
-	for _, role := range []string{domain.RoleViewer} {
+	for _, role := range []string{domain.RoleEditor, domain.RoleViewer} {
 		t.Run(role+" sees redacted server config", func(t *testing.T) {
 			token := issueToken(t, role)
 			rr := doRequest(router, "GET", "/api/v1/server", token, "")
@@ -437,3 +452,24 @@ func TestServerConfigRedaction(t *testing.T) {
 	}
 }
 
+func TestRoleRank(t *testing.T) {
+	tests := []struct {
+		role string
+		want int
+	}{
+		{domain.RoleAdmin, 3},
+		{domain.RoleEditor, 2},
+		{domain.RoleViewer, 1},
+		{"", 0},
+		{"unknown", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run("role_"+tt.role, func(t *testing.T) {
+			got := roleRank(tt.role)
+			if got != tt.want {
+				t.Errorf("roleRank(%q) = %d, want %d", tt.role, got, tt.want)
+			}
+		})
+	}
+}
