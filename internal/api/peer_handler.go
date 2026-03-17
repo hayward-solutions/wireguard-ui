@@ -299,6 +299,80 @@ func (h *PeerHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "peer deleted"})
 }
 
+func (h *PeerHandler) HandleRegenerate(w http.ResponseWriter, r *http.Request) {
+	peer, _ := requirePeerAccess(h.store, w, r)
+	if peer == nil {
+		return
+	}
+
+	var req struct {
+		PublicKey string `json:"public_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+
+	if req.PublicKey == "" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "public_key is required")
+		return
+	}
+
+	if err := wireguard.ValidatePublicKey(req.PublicKey); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid public key: must be a valid base64-encoded 32-byte WireGuard key")
+		return
+	}
+
+	// Check for duplicate public key (excluding this peer).
+	existingPeers, err := h.store.ListPeers(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to list peers")
+		return
+	}
+	for _, p := range existingPeers {
+		if p.PublicKey == req.PublicKey && p.ID != peer.ID {
+			writeError(w, http.StatusConflict, "CONFLICT", "a peer with this public key already exists")
+			return
+		}
+	}
+
+	// Generate new preshared key.
+	psk, err := wireguard.GeneratePresharedKey()
+	if err != nil {
+		slog.Error("generate preshared key", "error", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to generate preshared key")
+		return
+	}
+
+	oldPublicKey := peer.PublicKey
+
+	peer.PublicKey = req.PublicKey
+	peer.PresharedKey = psk
+	peer.PrivateKey = "" // client holds the private key
+
+	if err := h.store.UpdatePeer(r.Context(), peer); err != nil {
+		slog.Error("regenerate peer", "error", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to update peer")
+		return
+	}
+
+	slog.Warn("audit", "action", "peer_regenerated", "actor", actorFromRequest(r), "target_id", peer.ID, "target_name", peer.Name)
+
+	// Replace peer in WireGuard: remove old, add new.
+	h.wg.RemovePeer(oldPublicKey)
+	if peer.Enabled {
+		if err := h.wg.AddPeer(peer); err != nil {
+			slog.Error("add regenerated peer to wg", "error", err)
+		}
+	}
+
+	h.reloadACL(r)
+	writeJSON(w, http.StatusOK, createPeerResponse{
+		Peer:         peer,
+		PresharedKey: psk,
+	})
+}
+
 func (h *PeerHandler) HandleToggle(w http.ResponseWriter, r *http.Request) {
 	peer, _ := requirePeerAccess(h.store, w, r)
 	if peer == nil {

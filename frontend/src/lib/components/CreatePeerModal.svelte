@@ -3,7 +3,8 @@
 	import { api, type CreatePeerResponse, type ServerConfig } from '$lib/api';
 	import { generateKeyPair } from '$lib/crypto/wireguard-keys';
 	import { renderPeerConfig } from '$lib/crypto/render-config';
-	import { X, ChevronDown, ChevronUp, Download, AlertTriangle } from 'lucide-svelte';
+	import { generateQRCodeDataURL } from '$lib/crypto/qrcode';
+	import { X, ChevronDown, ChevronUp, Download, QrCode, AlertTriangle } from 'lucide-svelte';
 
 	let { open = $bindable(false) }: { open: boolean } = $props();
 
@@ -20,6 +21,8 @@
 	let createdPeer = $state<CreatePeerResponse | null>(null);
 	let clientPrivateKey = $state<string | null>(null);
 	let serverConfig = $state<ServerConfig | null>(null);
+	let qrDataURL = $state<string | null>(null);
+	let showQR = $state(false);
 
 	// Load server defaults when modal opens
 	$effect(() => {
@@ -47,7 +50,19 @@
 		defaultsLoaded = false;
 		createdPeer = null;
 		clientPrivateKey = null;
+		qrDataURL = null;
+		showQR = false;
 		error = '';
+	}
+
+	function getConfigString(): string | null {
+		if (!createdPeer || !clientPrivateKey || !serverConfig) return null;
+		return renderPeerConfig({
+			privateKey: clientPrivateKey,
+			presharedKey: createdPeer.preshared_key || '',
+			peer: createdPeer,
+			server: serverConfig
+		});
 	}
 
 	async function handleSubmit(e: Event) {
@@ -68,6 +83,12 @@
 				keyPair.publicKey
 			);
 			createdPeer = response;
+
+			// Pre-generate QR code data URL
+			const conf = getConfigString();
+			if (conf) {
+				qrDataURL = await generateQRCodeDataURL(conf);
+			}
 		} catch (err) {
 			clientPrivateKey = null;
 			error = err instanceof Error ? err.message : 'Failed to create peer';
@@ -77,14 +98,8 @@
 	}
 
 	function downloadConfig() {
-		if (!createdPeer || !clientPrivateKey || !serverConfig) return;
-
-		const conf = renderPeerConfig({
-			privateKey: clientPrivateKey,
-			presharedKey: createdPeer.preshared_key || '',
-			peer: createdPeer,
-			server: serverConfig
-		});
+		const conf = getConfigString();
+		if (!conf || !createdPeer) return;
 
 		const blob = new Blob([conf], { type: 'text/plain' });
 		const url = URL.createObjectURL(blob);
@@ -99,6 +114,7 @@
 		// Discard the private key and close
 		clientPrivateKey = null;
 		createdPeer = null;
+		qrDataURL = null;
 		open = false;
 	}
 </script>
@@ -116,7 +132,7 @@
 					<div class="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950">
 						<AlertTriangle size={20} class="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
 						<p class="text-sm text-amber-800 dark:text-amber-200">
-							Download your configuration now. The private key is generated in your browser and <strong>cannot be recovered</strong> after you close this dialog.
+							Save your configuration now. The private key is generated in your browser and <strong>cannot be recovered</strong> after you close this dialog.
 						</p>
 					</div>
 
@@ -133,13 +149,28 @@
 						</dl>
 					</div>
 
-					<button
-						onclick={downloadConfig}
-						class="flex w-full items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-					>
-						<Download size={16} />
-						Download Configuration
-					</button>
+					<div class="flex gap-2">
+						<button
+							onclick={downloadConfig}
+							class="flex flex-1 items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+						>
+							<Download size={16} />
+							Download Config
+						</button>
+						<button
+							onclick={() => (showQR = !showQR)}
+							class="flex items-center justify-center gap-2 rounded-lg border border-zinc-300 px-4 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+						>
+							<QrCode size={16} />
+							QR Code
+						</button>
+					</div>
+
+					{#if showQR && qrDataURL}
+						<div class="flex justify-center rounded-lg border border-zinc-100 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-800">
+							<img src={qrDataURL} alt="QR Code for {createdPeer.name}" class="h-48 w-48" />
+						</div>
+					{/if}
 
 					<button
 						onclick={handleDismiss}

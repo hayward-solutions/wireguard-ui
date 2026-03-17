@@ -1,13 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import type { Peer } from '$lib/api';
 	import { peers, loadPeers } from '$lib/stores/peers';
 	import { stats } from '$lib/stores/stats';
 	import PeerCard from '$lib/components/PeerCard.svelte';
 	import PeerTable from '$lib/components/PeerTable.svelte';
 	import CreatePeerModal from '$lib/components/CreatePeerModal.svelte';
+	import RegeneratePeerModal from '$lib/components/RegeneratePeerModal.svelte';
 	import { Plus, Search, LayoutGrid, List } from 'lucide-svelte';
 
 	let showCreate = $state(false);
+	let regeneratePeer = $state<Peer | null>(null);
 	let search = $state('');
 	let view = $state<'table' | 'cards'>(
 		(typeof localStorage !== 'undefined' && localStorage.getItem('peers-view') as 'table' | 'cards') || 'table'
@@ -16,6 +19,10 @@
 	function setView(v: 'table' | 'cards') {
 		view = v;
 		localStorage.setItem('peers-view', v);
+	}
+
+	function handleRegenerate(peer: Peer) {
+		regeneratePeer = peer;
 	}
 
 	const filteredPeers = $derived(
@@ -81,11 +88,11 @@
 
 	<div class="mt-6">
 		{#if view === 'table'}
-			<PeerTable peers={filteredPeers} statsMap={$stats} />
+			<PeerTable peers={filteredPeers} statsMap={$stats} onregenerate={handleRegenerate} />
 		{:else}
 			<div class="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
 				{#each filteredPeers as peer (peer.id)}
-					<PeerCard {peer} stats={$stats.get(peer.public_key)} />
+					<PeerCard {peer} stats={$stats.get(peer.public_key)} onregenerate={handleRegenerate} />
 				{:else}
 					<div class="col-span-full py-12 text-center text-zinc-400 dark:text-zinc-500">
 						{search ? 'No peers match your search' : 'No peers yet. Click "Add Peer" to get started.'}
@@ -97,3 +104,4 @@
 </div>
 
 <CreatePeerModal bind:open={showCreate} />
+<RegeneratePeerModal bind:peer={regeneratePeer} />
