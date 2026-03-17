@@ -19,6 +19,7 @@ type AuthHandler struct {
 	jwt            *auth.JWTManager
 	store          database.Store
 	oidcAdminGroup string
+	secureCookie   bool
 }
 
 type AuthHandlerConfig struct {
@@ -26,6 +27,7 @@ type AuthHandlerConfig struct {
 	JWT            *auth.JWTManager
 	Store          database.Store
 	OIDCAdminGroup string
+	SecureCookie   bool
 }
 
 func NewAuthHandler(cfg AuthHandlerConfig) *AuthHandler {
@@ -34,6 +36,7 @@ func NewAuthHandler(cfg AuthHandlerConfig) *AuthHandler {
 		jwt:            cfg.JWT,
 		store:          cfg.Store,
 		oidcAdminGroup: cfg.OIDCAdminGroup,
+		secureCookie:   cfg.SecureCookie,
 	}
 }
 
@@ -53,6 +56,7 @@ func (h *AuthHandler) HandleLoginPage(w http.ResponseWriter, r *http.Request) {
 			Path:     "/",
 			MaxAge:   300,
 			HttpOnly: true,
+			Secure:   h.secureCookie,
 			SameSite: http.SameSiteLaxMode,
 		})
 
@@ -99,6 +103,7 @@ func (h *AuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   86400,
 		HttpOnly: true,
+		Secure:   h.secureCookie,
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -139,6 +144,7 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   h.secureCookie,
 	})
 
 	code := r.URL.Query().Get("code")
@@ -206,6 +212,7 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   86400,
 		HttpOnly: true,
+		Secure:   h.secureCookie,
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -219,6 +226,7 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   h.secureCookie,
 	})
 	writeJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
 }

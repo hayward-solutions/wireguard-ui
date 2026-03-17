@@ -23,10 +23,16 @@ type RouterConfig struct {
 	DevMode        bool
 	AdminAPIKey    string
 	OIDCAdminGroup string
+	RequireHTTPS   bool
 }
 
 func NewRouter(cfg RouterConfig) *chi.Mux {
 	r := chi.NewRouter()
+
+	// HTTPS enforcement (must be first to redirect before any other processing)
+	if cfg.RequireHTTPS {
+		r.Use(HTTPSRedirectMiddleware)
+	}
 
 	// Global middleware
 	r.Use(middleware.RequestID)
@@ -46,6 +52,7 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		JWT:            cfg.JWTManager,
 		Store:          cfg.Store,
 		OIDCAdminGroup: cfg.OIDCAdminGroup,
+		SecureCookie:   cfg.RequireHTTPS,
 	})
 
 	// Health check (unauthenticated)

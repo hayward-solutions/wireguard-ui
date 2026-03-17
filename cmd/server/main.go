@@ -209,6 +209,7 @@ func run() error {
 		DevMode:        cfg.DevMode,
 		AdminAPIKey:    cfg.AdminAPIKey,
 		OIDCAdminGroup: cfg.OIDCAdminGroup,
+		RequireHTTPS:   cfg.RequireHTTPS,
 	})
 
 	// Start HTTP server

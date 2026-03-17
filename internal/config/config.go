@@ -51,6 +51,9 @@ type Config struct {
 	// Monitoring
 	StatsInterval time.Duration
 
+	// Security
+	RequireHTTPS bool
+
 	// Development
 	DevMode bool
 }
@@ -97,6 +100,7 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid WG_MTU: %w", err)
 	}
 
+	cfg.RequireHTTPS = envOrDefault("REQUIRE_HTTPS", "false") == "true"
 	cfg.WGUserspaceMode = envOrDefault("WG_USERSPACE_MODE", "true") == "true"
 	cfg.WGNetstackMode = envOrDefault("WG_NETSTACK_MODE", "false") == "true"
 	cfg.WGMockMode = envOrDefault("WG_MOCK_MODE", "false") == "true"
