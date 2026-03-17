@@ -5,14 +5,20 @@ A self-hosted WireGuard VPN management interface with a clean web UI, REST API, 
 ## Features
 
 - **One-click peer management** — create peers, download configs, scan QR codes
-- **Userspace WireGuard** — runs without a kernel module (Docker, ECS Fargate, etc.)
+- **Userspace WireGuard** — runs without a kernel module (Docker, Kubernetes, etc.)
+- **gVisor netstack** — fully userspace networking for ECS Fargate and serverless (no `NET_ADMIN` required)
 - **OIDC authentication** — integrate with any OpenID Connect provider, or use local username/password
-- **Role-based access** — admins see all peers; regular users see only their own
-- **REST API** — full CRUD with API key support for automation
+- **Role-based access** — three roles: admin (full control), editor (manage own peers), viewer (read-only)
+- **Groups & ACL network policies** — fine-grained L3/L4 network access rules per user or group
+- **REST API** — full CRUD with JWT and API key support for automation
+- **API token self-service** — users can generate their own read-only API tokens
 - **Real-time stats** — live connection status, handshake times, and transfer data via SSE
 - **Single binary** — Go backend with embedded SvelteKit SPA, no external dependencies
 - **Multi-database** — SQLite (default) or PostgreSQL
 - **Encrypted key storage** — peer private keys encrypted at rest with AES-256-GCM
+- **Rate limiting & account lockout** — brute-force protection on auth endpoints
+- **Audit logging** — structured JSON logs of auth events and sensitive operations
+- **HTTPS enforcement** — optional automatic HTTPS redirect
 
 ## Quick Start
 
@@ -29,6 +35,16 @@ ADMIN_PASSWORD=your-secure-password
 JWT_SECRET=your-random-secret
 WG_ENDPOINT=vpn.example.com:51820
 ```
+
+### Serverless / Fargate Deployment
+
+For environments without `NET_ADMIN` or `/dev/net/tun` (e.g., ECS Fargate), use the netstack profile:
+
+```bash
+docker compose --profile fargate up -d
+```
+
+This runs WireGuard entirely in userspace via gVisor netstack — no kernel module, no capabilities, no TUN device.
 
 ## Configuration
 
@@ -67,6 +83,7 @@ All configuration is via environment variables.
 | `WG_INTERFACE_NAME` | WireGuard interface name | `wg0` |
 | `WG_MTU` | Interface MTU | `1420` |
 | `WG_USERSPACE_MODE` | Use wireguard-go instead of kernel module | `true` |
+| `WG_NETSTACK_MODE` | Use gVisor netstack (fully userspace, no NET_ADMIN) | `false` |
 | `WG_MOCK_MODE` | Mock WireGuard for development | `false` |
 
 ### Authentication
@@ -80,14 +97,25 @@ All configuration is via environment variables.
 | `OIDC_CLIENT_SECRET` | OIDC client secret | — |
 | `OIDC_REDIRECT_URL` | OIDC callback URL | `{BASE_URL}/auth/callback` |
 | `OIDC_SCOPES` | OIDC scopes to request | `openid,profile,email` |
+| `OIDC_ADMIN_GROUP` | OIDC group claim whose members are granted admin role | — |
+
+### Security
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ENCRYPTION_KEY` | Key for at-rest encryption (must differ from JWT_SECRET) | — |
+| `REQUIRE_HTTPS` | Enforce HTTPS redirect on all requests | `false` |
+| `CORS_ORIGINS` | Comma-separated allowed origins for CORS | — |
+| `ALLOW_CUSTOM_SCRIPTS` | Allow raw PostUp/PostDown shell scripts in server config | `false` |
 
 ### Other
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ENCRYPTION_KEY` | Key for at-rest encryption (defaults to JWT_SECRET) | — |
-| `JWT_EXPIRY` | JWT token lifetime | `24h` |
+| `JWT_EXPIRY` | JWT token lifetime | `15m` |
+| `SESSION_EXPIRY` | Browser session lifetime | `168h` |
 | `STATS_INTERVAL` | How often to poll WireGuard stats | `10s` |
+| `DEV_MODE` | Enable development features | `false` |
 
 ## Docker Compose
 
@@ -121,53 +149,95 @@ volumes:
 
 All endpoints return `{ "data": ..., "error": ... }`. Authenticate with a JWT cookie or `Authorization: Bearer <api-key>` header.
 
-### Peers
+### Auth (unauthenticated, rate-limited)
 
 ```
-GET    /api/v1/peers              # List peers (filtered by ownership)
-POST   /api/v1/peers              # Create peer
-GET    /api/v1/peers/:id          # Get peer
-PUT    /api/v1/peers/:id          # Update peer
-DELETE /api/v1/peers/:id          # Delete peer
-PATCH  /api/v1/peers/:id/toggle   # Enable/disable peer
-GET    /api/v1/peers/:id/config   # Download .conf file
-GET    /api/v1/peers/:id/qrcode   # Get QR code (PNG)
+GET    /auth/info                       # Available auth methods
+GET    /auth/login                      # OIDC login redirect or login page
+POST   /auth/login                      # Local username/password login
+GET    /auth/callback                   # OIDC callback
+POST   /auth/logout                     # Clear session
+POST   /auth/refresh                    # Refresh JWT token
+GET    /auth/me                         # Current user info (authenticated)
+```
+
+### Peers (ownership-enforced, editor+ for writes)
+
+```
+GET    /api/v1/peers                    # List peers (filtered by ownership)
+POST   /api/v1/peers                    # Create peer
+GET    /api/v1/peers/{id}               # Get peer
+PUT    /api/v1/peers/{id}               # Update peer
+DELETE /api/v1/peers/{id}               # Delete peer
+PATCH  /api/v1/peers/{id}/toggle        # Enable/disable peer
+GET    /api/v1/peers/{id}/config        # Download .conf file
+GET    /api/v1/peers/{id}/qrcode        # Get QR code (PNG)
 ```
 
 ### Server (admin only for writes)
 
 ```
-GET    /api/v1/server             # Get server config
-PUT    /api/v1/server             # Update server config
-POST   /api/v1/server/apply       # Apply config to WireGuard interface
-```
-
-### Auth
-
-```
-GET    /auth/login                # OIDC login redirect
-GET    /auth/callback             # OIDC callback
-POST   /auth/logout               # Clear session
-GET    /auth/me                   # Current user info
-POST   /auth/local                # Local username/password login
+GET    /api/v1/server                   # Get server config
+PUT    /api/v1/server                   # Update server config
+POST   /api/v1/server/apply             # Apply config to WireGuard interface
 ```
 
 ### Stats
 
 ```
-GET    /api/v1/stats              # Current peer stats
-GET    /api/v1/stats/stream       # SSE real-time stats stream
+GET    /api/v1/stats                    # Current peer stats
+GET    /api/v1/stats/stream             # SSE real-time stats stream
 ```
 
 ### Users (admin only)
 
 ```
-GET    /api/v1/users              # List users
-POST   /api/v1/users              # Create user
-GET    /api/v1/users/:id          # Get user
-PUT    /api/v1/users/:id          # Update user
-DELETE /api/v1/users/:id          # Delete user
-POST   /api/v1/me/password        # Change own password
+GET    /api/v1/users                    # List users
+POST   /api/v1/users                    # Create user
+GET    /api/v1/users/{id}               # Get user
+PUT    /api/v1/users/{id}               # Update user
+DELETE /api/v1/users/{id}               # Delete user
+POST   /api/v1/users/{id}/reset-password # Admin password reset
+GET    /api/v1/users/{id}/groups        # Get user's groups
+PUT    /api/v1/users/{id}/groups        # Set user's groups
+```
+
+### Self-service
+
+```
+POST   /api/v1/me/password              # Change own password
+GET    /api/v1/me/tokens                # List own API tokens
+POST   /api/v1/me/tokens                # Create API token
+DELETE /api/v1/me/tokens/{id}           # Revoke API token
+```
+
+### Groups (admin only)
+
+```
+GET    /api/v1/groups                   # List groups
+POST   /api/v1/groups                   # Create group
+GET    /api/v1/groups/{id}              # Get group
+PUT    /api/v1/groups/{id}              # Update group
+DELETE /api/v1/groups/{id}              # Delete group
+GET    /api/v1/groups/{id}/members      # List group members
+```
+
+### ACL Rules (admin only)
+
+```
+GET    /api/v1/acls                     # List all ACL rules
+POST   /api/v1/acls                     # Create rule
+GET    /api/v1/acls/{id}                # Get rule
+PUT    /api/v1/acls/{id}                # Update rule
+DELETE /api/v1/acls/{id}                # Delete rule
+POST   /api/v1/acls/reload              # Reload policy engine
+GET    /api/v1/acls/effective/{userID}  # Get effective rules for user
+```
+
+### Health
+
+```
+GET    /api/v1/health                   # Returns {"status": "ok"}
 ```
 
 ### Example: Create a peer via API
@@ -221,11 +291,12 @@ make lint-frontend   # Frontend linting
 cmd/server/main.go          # Entrypoint, DI, graceful shutdown
 internal/
   config/                   # Environment variable parsing
-  auth/                     # OIDC, JWT, middleware
+  auth/                     # OIDC, JWT, local auth, rate limiting, middleware
   database/                 # Store interface, SQLite + PostgreSQL implementations
-  domain/                   # Models (Peer, ServerConfig, User)
-  wireguard/                # Manager interface, wgctrl, userspace, mock, IP allocation
-  api/                      # HTTP handlers, routing, authorization
+  domain/                   # Models (Peer, ServerConfig, User, Group, ACLRule, APIToken, Session)
+  wireguard/                # Manager interface: wgctrl, userspace, netstack, mock, IP allocation
+  api/                      # HTTP handlers, routing, RBAC authorization
+  acl/                      # In-memory ACL policy engine for network-level access control
   monitor/                  # Background stats polling
   crypto/                   # AES-256-GCM encryption for key storage
 frontend/                   # SvelteKit SPA (Tailwind CSS, Svelte 5)
@@ -234,9 +305,10 @@ frontend/                   # SvelteKit SPA (Tailwind CSS, Svelte 5)
 ### Key design decisions
 
 - **Userspace-first** — `WG_USERSPACE_MODE=true` by default for container compatibility
+- **Netstack option** — `WG_NETSTACK_MODE=true` for fully userspace networking (Fargate, serverless)
 - **Single binary** — the built SPA is embedded via `go:embed`
 - **Pure Go SQLite** — uses `modernc.org/sqlite`, no CGo required (`CGO_ENABLED=0`)
-- **Auto NAT/masquerade** — default PostUp/PostDown iptables rules are generated on first boot
+- **Structured firewall config** — declarative NAT/masquerade settings replace raw shell scripts by default; `ALLOW_CUSTOM_SCRIPTS=true` re-enables PostUp/PostDown
 - **Peer re-sync** — all enabled peers are re-applied to the WireGuard interface on every startup
 
 ## License
