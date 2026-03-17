@@ -15,22 +15,25 @@ import (
 )
 
 type AuthHandler struct {
-	oidc  *auth.OIDCProvider
-	jwt   *auth.JWTManager
-	store database.Store
+	oidc         *auth.OIDCProvider
+	jwt          *auth.JWTManager
+	store        database.Store
+	secureCookie bool
 }
 
 type AuthHandlerConfig struct {
-	OIDC  *auth.OIDCProvider
-	JWT   *auth.JWTManager
-	Store database.Store
+	OIDC         *auth.OIDCProvider
+	JWT          *auth.JWTManager
+	Store        database.Store
+	SecureCookie bool
 }
 
 func NewAuthHandler(cfg AuthHandlerConfig) *AuthHandler {
 	return &AuthHandler{
-		oidc:  cfg.OIDC,
-		jwt:   cfg.JWT,
-		store: cfg.Store,
+		oidc:         cfg.OIDC,
+		jwt:          cfg.JWT,
+		store:        cfg.Store,
+		secureCookie: cfg.SecureCookie,
 	}
 }
 
@@ -50,6 +53,7 @@ func (h *AuthHandler) HandleLoginPage(w http.ResponseWriter, r *http.Request) {
 			Path:     "/",
 			MaxAge:   300,
 			HttpOnly: true,
+			Secure:   h.secureCookie,
 			SameSite: http.SameSiteLaxMode,
 		})
 
@@ -96,6 +100,7 @@ func (h *AuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   86400,
 		HttpOnly: true,
+		Secure:   h.secureCookie,
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -136,6 +141,7 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   h.secureCookie,
 	})
 
 	code := r.URL.Query().Get("code")
@@ -185,6 +191,7 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   86400,
 		HttpOnly: true,
+		Secure:   h.secureCookie,
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -198,6 +205,7 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   h.secureCookie,
 	})
 	writeJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
 }

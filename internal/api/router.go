@@ -22,10 +22,16 @@ type RouterConfig struct {
 	FrontendFS   fs.FS
 	DevMode      bool
 	AdminAPIKey  string
+	RequireHTTPS bool
 }
 
 func NewRouter(cfg RouterConfig) *chi.Mux {
 	r := chi.NewRouter()
+
+	// HTTPS enforcement (must be first to redirect before any other processing)
+	if cfg.RequireHTTPS {
+		r.Use(HTTPSRedirectMiddleware)
+	}
 
 	// Global middleware
 	r.Use(middleware.RequestID)
@@ -41,9 +47,10 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 	}))
 
 	authHandler := NewAuthHandler(AuthHandlerConfig{
-		OIDC:  cfg.OIDCProvider,
-		JWT:   cfg.JWTManager,
-		Store: cfg.Store,
+		OIDC:         cfg.OIDCProvider,
+		JWT:          cfg.JWTManager,
+		Store:        cfg.Store,
+		SecureCookie: cfg.RequireHTTPS,
 	})
 
 	// Health check (unauthenticated)

@@ -208,6 +208,7 @@ func run() error {
 		FrontendFS:   frontendFS,
 		DevMode:      cfg.DevMode,
 		AdminAPIKey:  cfg.AdminAPIKey,
+		RequireHTTPS: cfg.RequireHTTPS,
 	})
 
 	// Start HTTP server
