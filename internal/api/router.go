@@ -3,6 +3,7 @@ package api
 import (
 	"io/fs"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -23,11 +24,16 @@ type RouterConfig struct {
 	Monitor      *monitor.Monitor
 	PolicyEngine *acl.PolicyEngine
 	FrontendFS   fs.FS
+	AuthRateLimiter    *auth.RateLimiter
+	LoginRateLimiter   *auth.RateLimiter
+	PasswordRateLimiter *auth.RateLimiter
+	SessionExpiry      time.Duration
 	DevMode            bool
 	AdminAPIKey        string
 	OIDCAdminGroup     string
 	RequireHTTPS       bool
 	AllowCustomScripts bool
+	CORSOrigins        []string
 }
 
 func NewRouter(cfg RouterConfig) *chi.Mux {
@@ -43,11 +49,14 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	// Only allow credentialed cross-origin requests for explicitly listed origins.
+	// Wildcard ("*") disables credentials to prevent ambient-authority attacks.
+	allowCreds := len(cfg.CORSOrigins) > 0 && cfg.CORSOrigins[0] != "*"
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowedOrigins:   cfg.CORSOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-API-Key"},
-		AllowCredentials: true,
+		AllowCredentials: allowCreds,
 		MaxAge:           300,
 	}))
 
@@ -55,9 +64,11 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		OIDC:           cfg.OIDCProvider,
 		JWT:            cfg.JWTManager,
 		Store:          cfg.Store,
+		LoginLimiter:   cfg.LoginRateLimiter,
 		OIDCAdminGroup: cfg.OIDCAdminGroup,
 		SecureCookie:   cfg.RequireHTTPS,
 		PolicyEngine:   cfg.PolicyEngine,
+		SessionExpiry:  cfg.SessionExpiry,
 	})
 
 	// Health check (unauthenticated)
@@ -65,12 +76,18 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 
-	// Auth routes (unauthenticated)
-	r.Get("/auth/info", authHandler.HandleAuthInfo)
-	r.Get("/auth/login", authHandler.HandleLoginPage)
-	r.Post("/auth/login", authHandler.HandleLocalLogin)
-	r.Get("/auth/callback", authHandler.HandleCallback)
-	r.Post("/auth/logout", authHandler.HandleLogout)
+	// Auth routes (unauthenticated, rate-limited by IP)
+	r.Group(func(r chi.Router) {
+		if cfg.AuthRateLimiter != nil {
+			r.Use(auth.IPRateLimitMiddleware(cfg.AuthRateLimiter))
+		}
+		r.Get("/auth/info", authHandler.HandleAuthInfo)
+		r.Get("/auth/login", authHandler.HandleLoginPage)
+		r.Post("/auth/login", authHandler.HandleLocalLogin)
+		r.Get("/auth/callback", authHandler.HandleCallback)
+		r.Post("/auth/logout", authHandler.HandleLogout)
+		r.Post("/auth/refresh", authHandler.HandleRefresh)
+	})
 
 	// Authenticated API routes
 	r.Group(func(r chi.Router) {
@@ -105,9 +122,13 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		r.Get("/api/v1/stats", statsHandler.HandleGet)
 		r.Get("/api/v1/stats/stream", statsHandler.HandleStream)
 
-		// Self-service: password change and API tokens
+		// Self-service: password change and API tokens (with tighter rate limit)
 		userHandler := NewUserHandler(cfg.Store)
-		r.Post("/api/v1/me/password", userHandler.HandleChangePassword)
+		if cfg.PasswordRateLimiter != nil {
+			r.With(auth.IPRateLimitMiddleware(cfg.PasswordRateLimiter)).Post("/api/v1/me/password", userHandler.HandleChangePassword)
+		} else {
+			r.Post("/api/v1/me/password", userHandler.HandleChangePassword)
+		}
 
 		tokenHandler := NewTokenHandler(cfg.Store)
 		r.Get("/api/v1/me/tokens", tokenHandler.HandleList)
@@ -142,6 +163,9 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		// User management (admin only)
 		r.Route("/api/v1/users", func(r chi.Router) {
 			r.Use(RequireAdmin)
+			if cfg.PasswordRateLimiter != nil {
+				r.Use(auth.IPRateLimitMiddleware(cfg.PasswordRateLimiter))
+			}
 			r.Get("/", userHandler.HandleList)
 			r.Post("/", userHandler.HandleCreate)
 			r.Get("/{id}", userHandler.HandleGet)

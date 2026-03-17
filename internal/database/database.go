@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"time"
 
 	"github.com/hayward-solutions/wireguard-ui/internal/domain"
 )
@@ -57,6 +58,19 @@ type Store interface {
 	UpdateACLRule(ctx context.Context, r *domain.ACLRule) error
 	DeleteACLRule(ctx context.Context, id string) error
 	GetEffectiveACLRules(ctx context.Context, userID string) ([]domain.ACLRule, error)
+
+	// Login security
+	RecordFailedLogin(ctx context.Context, userID string) (attempts int, err error)
+	ResetFailedLogins(ctx context.Context, userID string) error
+	LockUser(ctx context.Context, userID string, until time.Time) error
+	UpdateLastLogin(ctx context.Context, userID string) error
+
+	// Sessions
+	CreateSession(ctx context.Context, s *domain.Session) error
+	GetSession(ctx context.Context, id string) (*domain.Session, error)
+	RevokeSession(ctx context.Context, id string) error
+	RevokeUserSessions(ctx context.Context, userID string) error
+	CleanExpiredSessions(ctx context.Context) error
 
 	// Tunnels (stretch)
 	ListTunnels(ctx context.Context) ([]domain.Tunnel, error)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -25,8 +26,9 @@ type Config struct {
 	OIDCAdminGroup   string
 
 	// JWT
-	JWTSecret string
-	JWTExpiry time.Duration
+	JWTSecret     string
+	JWTExpiry     time.Duration
+	SessionExpiry time.Duration
 
 	// WireGuard
 	WGInterfaceName      string
@@ -54,6 +56,7 @@ type Config struct {
 	// Security
 	RequireHTTPS       bool
 	AllowCustomScripts bool
+	CORSOrigins        []string
 
 	// Development
 	DevMode bool
@@ -107,10 +110,24 @@ func Load() (*Config, error) {
 	cfg.WGNetstackMode = envOrDefault("WG_NETSTACK_MODE", "false") == "true"
 	cfg.WGMockMode = envOrDefault("WG_MOCK_MODE", "false") == "true"
 
-	expiryStr := envOrDefault("JWT_EXPIRY", "24h")
+	if origins := os.Getenv("CORS_ORIGINS"); origins != "" {
+		for _, o := range strings.Split(origins, ",") {
+			if trimmed := strings.TrimSpace(o); trimmed != "" {
+				cfg.CORSOrigins = append(cfg.CORSOrigins, trimmed)
+			}
+		}
+	}
+
+	expiryStr := envOrDefault("JWT_EXPIRY", "15m")
 	cfg.JWTExpiry, err = time.ParseDuration(expiryStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid JWT_EXPIRY: %w", err)
+	}
+
+	sessionExpiryStr := envOrDefault("SESSION_EXPIRY", "168h")
+	cfg.SessionExpiry, err = time.ParseDuration(sessionExpiryStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid SESSION_EXPIRY: %w", err)
 	}
 
 	intervalStr := envOrDefault("STATS_INTERVAL", "10s")
@@ -141,6 +158,9 @@ func (c *Config) validate() error {
 		}
 		if c.AdminPassword == "" {
 			c.AdminPassword = "admin"
+		}
+		if len(c.CORSOrigins) == 0 {
+			c.CORSOrigins = []string{"*"}
 		}
 		return nil
 	}

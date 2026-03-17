@@ -21,8 +21,10 @@ type AuthHandler struct {
 	oidc           *auth.OIDCProvider
 	jwt            *auth.JWTManager
 	store          database.Store
+	loginLimiter   *auth.RateLimiter
 	oidcAdminGroup string
 	secureCookie   bool
+	sessionExpiry  time.Duration
 	policyEngine   *acl.PolicyEngine
 }
 
@@ -30,8 +32,10 @@ type AuthHandlerConfig struct {
 	OIDC           *auth.OIDCProvider
 	JWT            *auth.JWTManager
 	Store          database.Store
+	LoginLimiter   *auth.RateLimiter
 	OIDCAdminGroup string
 	SecureCookie   bool
+	SessionExpiry  time.Duration
 	PolicyEngine   *acl.PolicyEngine
 }
 
@@ -40,8 +44,10 @@ func NewAuthHandler(cfg AuthHandlerConfig) *AuthHandler {
 		oidc:           cfg.OIDC,
 		jwt:            cfg.JWT,
 		store:          cfg.Store,
+		loginLimiter:   cfg.LoginLimiter,
 		oidcAdminGroup: cfg.OIDCAdminGroup,
 		secureCookie:   cfg.SecureCookie,
+		sessionExpiry:  cfg.SessionExpiry,
 		policyEngine:   cfg.PolicyEngine,
 	}
 }
@@ -85,36 +91,51 @@ func (h *AuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Per-username rate limiting
+	if h.loginLimiter != nil && !h.loginLimiter.Allow(req.Username) {
+		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many requests, try again later")
+		return
+	}
+
 	user, err := h.store.GetUserByUsername(r.Context(), req.Username)
 	if err != nil || user == nil {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid credentials")
 		return
 	}
 
+	// Check account lockout
+	if user.LockedUntil != nil && user.LockedUntil.After(time.Now()) {
+		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many failed attempts, try again later")
+		return
+	}
+
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		// Record failed login and potentially lock the account
+		attempts, lockErr := h.store.RecordFailedLogin(r.Context(), user.ID)
+		if lockErr != nil {
+			slog.Error("failed to record failed login", "error", lockErr)
+		} else if lockDuration := lockoutDuration(attempts); lockDuration > 0 {
+			if lockErr := h.store.LockUser(r.Context(), user.ID, time.Now().Add(lockDuration)); lockErr != nil {
+				slog.Error("failed to lock user", "error", lockErr)
+			}
+			slog.Warn("account locked due to failed login attempts",
+				"username", user.Username, "attempts", attempts, "lock_duration", lockDuration)
+		}
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid credentials")
 		return
 	}
 
-	token, err := h.jwt.Issue(user.ID, user.Username, user.Name, user.Role)
-	if err != nil {
-		slog.Error("jwt issue failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to issue token")
-		return
+	// Successful login — reset lockout and update last_login
+	if err := h.store.ResetFailedLogins(r.Context(), user.ID); err != nil {
+		slog.Error("failed to reset failed logins", "error", err)
+	}
+	if err := h.store.UpdateLastLogin(r.Context(), user.ID); err != nil {
+		slog.Error("failed to update last login", "error", err)
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "token",
-		Value:    token,
-		Path:     "/",
-		MaxAge:   86400,
-		HttpOnly: true,
-		Secure:   h.secureCookie,
-		SameSite: http.SameSiteLaxMode,
-	})
+	h.issueSessionAndToken(w, r, user)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"token": token,
 		"user": map[string]string{
 			"id":       user.ID,
 			"username": user.Username,
@@ -210,29 +231,34 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		h.syncOIDCGroups(r.Context(), user.ID, oidcUser.Groups)
 	}
 
-	token, err := h.jwt.Issue(user.ID, user.Username, user.Name, user.Role)
-	if err != nil {
-		slog.Error("jwt issue failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to issue token")
-		return
+	if err := h.store.UpdateLastLogin(r.Context(), user.ID); err != nil {
+		slog.Error("failed to update last login", "error", err)
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "token",
-		Value:    token,
-		Path:     "/",
-		MaxAge:   86400,
-		HttpOnly: true,
-		Secure:   h.secureCookie,
-		SameSite: http.SameSiteLaxMode,
-	})
+	h.issueSessionAndToken(w, r, user)
 
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
+	// Revoke server-side session
+	if sessionCookie, err := r.Cookie("session"); err == nil && sessionCookie.Value != "" {
+		if err := h.store.RevokeSession(r.Context(), sessionCookie.Value); err != nil {
+			slog.Error("failed to revoke session", "error", err)
+		}
+	}
+
+	// Clear both cookies
 	http.SetCookie(w, &http.Cookie{
 		Name:     "token",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   h.secureCookie,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
@@ -287,6 +313,117 @@ func (h *AuthHandler) syncOIDCGroups(ctx context.Context, userID string, oidcGro
 		if err := h.policyEngine.Reload(ctx, h.store); err != nil {
 			slog.Error("acl reload after oidc sync", "error", err)
 		}
+	}
+}
+
+// HandleRefresh issues a new short-lived JWT from a valid session cookie.
+func (h *AuthHandler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
+	sessionCookie, err := r.Cookie("session")
+	if err != nil || sessionCookie.Value == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "no session")
+		return
+	}
+
+	sess, err := h.store.GetSession(r.Context(), sessionCookie.Value)
+	if err != nil {
+		slog.Error("failed to get session", "error", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "session lookup failed")
+		return
+	}
+	if sess == nil || sess.Revoked || sess.ExpiresAt.Before(time.Now()) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "session expired")
+		return
+	}
+
+	// Load current user data (picks up role changes)
+	user, err := h.store.GetUser(r.Context(), sess.UserID)
+	if err != nil || user == nil {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "user not found")
+		return
+	}
+
+	token, err := h.jwt.Issue(user.ID, user.Username, user.Name, user.Role)
+	if err != nil {
+		slog.Error("jwt issue failed on refresh", "error", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to issue token")
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "token",
+		Value:    token,
+		Path:     "/",
+		MaxAge:   int(h.jwt.Expiry().Seconds()),
+		HttpOnly: true,
+		Secure:   h.secureCookie,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"id":    user.ID,
+		"email": user.Username,
+		"name":  user.Name,
+		"role":  user.Role,
+	})
+}
+
+// issueSessionAndToken creates a session and sets both session and JWT cookies.
+func (h *AuthHandler) issueSessionAndToken(w http.ResponseWriter, r *http.Request, user *domain.User) {
+	// Create session
+	now := time.Now()
+	sess := &domain.Session{
+		ID:        uuid.New().String(),
+		UserID:    user.ID,
+		CreatedAt: now,
+		ExpiresAt: now.Add(h.sessionExpiry),
+	}
+	if err := h.store.CreateSession(r.Context(), sess); err != nil {
+		slog.Error("failed to create session", "error", err)
+	}
+
+	// Set session cookie (long-lived)
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
+		Value:    sess.ID,
+		Path:     "/",
+		MaxAge:   int(h.sessionExpiry.Seconds()),
+		HttpOnly: true,
+		Secure:   h.secureCookie,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	// Issue short-lived JWT
+	token, err := h.jwt.Issue(user.ID, user.Username, user.Name, user.Role)
+	if err != nil {
+		slog.Error("jwt issue failed", "error", err)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "token",
+		Value:    token,
+		Path:     "/",
+		MaxAge:   int(h.jwt.Expiry().Seconds()),
+		HttpOnly: true,
+		Secure:   h.secureCookie,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// lockoutDuration returns how long to lock the account based on failed attempts.
+// Returns 0 if no lockout should be applied.
+func lockoutDuration(attempts int) time.Duration {
+	switch {
+	case attempts >= 20:
+		return 1 * time.Hour
+	case attempts >= 15:
+		return 15 * time.Minute
+	case attempts >= 10:
+		return 5 * time.Minute
+	case attempts >= 5:
+		return 1 * time.Minute
+	default:
+		return 0
 	}
 }
 

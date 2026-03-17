@@ -343,7 +343,8 @@ func (s *PostgresStore) DeletePeer(ctx context.Context, id string) error {
 
 func (s *PostgresStore) ListUsers(ctx context.Context) ([]domain.User, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, username, password_hash, name, role, last_login, created_at
+		SELECT id, username, password_hash, name, role, last_login,
+		       failed_login_attempts, locked_until, created_at
 		FROM users ORDER BY created_at`)
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
@@ -353,7 +354,8 @@ func (s *PostgresStore) ListUsers(ctx context.Context) ([]domain.User, error) {
 	var users []domain.User
 	for rows.Next() {
 		var u domain.User
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.LastLogin, &u.CreatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.LastLogin,
+			&u.FailedLoginAttempts, &u.LockedUntil, &u.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan user: %w", err)
 		}
 		users = append(users, u)
@@ -363,11 +365,13 @@ func (s *PostgresStore) ListUsers(ctx context.Context) ([]domain.User, error) {
 
 func (s *PostgresStore) GetUser(ctx context.Context, id string) (*domain.User, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, username, password_hash, name, role, last_login, created_at
+		SELECT id, username, password_hash, name, role, last_login,
+		       failed_login_attempts, locked_until, created_at
 		FROM users WHERE id = $1`, id)
 
 	var u domain.User
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.LastLogin, &u.CreatedAt)
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.LastLogin,
+		&u.FailedLoginAttempts, &u.LockedUntil, &u.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -379,11 +383,13 @@ func (s *PostgresStore) GetUser(ctx context.Context, id string) (*domain.User, e
 
 func (s *PostgresStore) GetUserByUsername(ctx context.Context, username string) (*domain.User, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, username, password_hash, name, role, last_login, created_at
+		SELECT id, username, password_hash, name, role, last_login,
+		       failed_login_attempts, locked_until, created_at
 		FROM users WHERE username = $1`, username)
 
 	var u domain.User
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.LastLogin, &u.CreatedAt)
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.LastLogin,
+		&u.FailedLoginAttempts, &u.LockedUntil, &u.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -427,6 +433,97 @@ func (s *PostgresStore) DeleteUser(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete user: %w", err)
+	}
+	return nil
+}
+
+// --- Login Security ---
+
+func (s *PostgresStore) RecordFailedLogin(ctx context.Context, userID string) (int, error) {
+	var attempts int
+	err := s.db.QueryRowContext(ctx, `
+		UPDATE users SET failed_login_attempts = failed_login_attempts + 1
+		WHERE id = $1 RETURNING failed_login_attempts`, userID).Scan(&attempts)
+	if err != nil {
+		return 0, fmt.Errorf("record failed login: %w", err)
+	}
+	return attempts, nil
+}
+
+func (s *PostgresStore) ResetFailedLogins(ctx context.Context, userID string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = $1`, userID)
+	if err != nil {
+		return fmt.Errorf("reset failed logins: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) LockUser(ctx context.Context, userID string, until time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET locked_until = $1 WHERE id = $2`, until, userID)
+	if err != nil {
+		return fmt.Errorf("lock user: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) UpdateLastLogin(ctx context.Context, userID string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET last_login = $1 WHERE id = $2`, time.Now(), userID)
+	if err != nil {
+		return fmt.Errorf("update last login: %w", err)
+	}
+	return nil
+}
+
+// --- Sessions ---
+
+func (s *PostgresStore) CreateSession(ctx context.Context, sess *domain.Session) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO sessions (id, user_id, created_at, expires_at, revoked)
+		VALUES ($1, $2, $3, $4, FALSE)`,
+		sess.ID, sess.UserID, sess.CreatedAt, sess.ExpiresAt)
+	if err != nil {
+		return fmt.Errorf("create session: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) GetSession(ctx context.Context, id string) (*domain.Session, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, user_id, created_at, expires_at, revoked
+		FROM sessions WHERE id = $1`, id)
+
+	var sess domain.Session
+	err := row.Scan(&sess.ID, &sess.UserID, &sess.CreatedAt, &sess.ExpiresAt, &sess.Revoked)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get session: %w", err)
+	}
+	return &sess, nil
+}
+
+func (s *PostgresStore) RevokeSession(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET revoked = TRUE WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("revoke session: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) RevokeUserSessions(ctx context.Context, userID string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET revoked = TRUE WHERE user_id = $1`, userID)
+	if err != nil {
+		return fmt.Errorf("revoke user sessions: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) CleanExpiredSessions(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at < NOW() OR revoked = TRUE`)
+	if err != nil {
+		return fmt.Errorf("clean expired sessions: %w", err)
 	}
 	return nil
 }
