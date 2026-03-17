@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -105,6 +106,8 @@ func (h *UserHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Warn("audit", "action", "user_created", "actor", claims.Subject, "target_id", user.ID, "target_name", user.Username, "role", user.Role)
+
 	writeJSON(w, http.StatusCreated, user)
 }
 
@@ -132,6 +135,8 @@ func (h *UserHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	oldRole := user.Role
+
 	if req.Username != "" {
 		user.Username = req.Username
 	}
@@ -150,6 +155,12 @@ func (h *UserHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to update user")
 		return
 	}
+
+	if oldRole != user.Role {
+		slog.Warn("audit", "action", "role_changed", "actor", claims.Subject, "target_id", user.ID,
+			"target_name", user.Username, "old_role", oldRole, "new_role", user.Role)
+	}
+	slog.Warn("audit", "action", "user_updated", "actor", claims.Subject, "target_id", user.ID, "target_name", user.Username)
 
 	writeJSON(w, http.StatusOK, user)
 }
@@ -172,6 +183,8 @@ func (h *UserHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to delete user")
 		return
 	}
+
+	slog.Warn("audit", "action", "user_deleted", "actor", claims.Subject, "target_id", id)
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "user deleted"})
 }
@@ -202,6 +215,8 @@ func (h *UserHandler) HandleResetPassword(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to reset password")
 		return
 	}
+
+	slog.Warn("audit", "action", "password_reset", "actor", claims.Subject, "target_id", id)
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "password reset"})
 }
@@ -247,6 +262,8 @@ func (h *UserHandler) HandleChangePassword(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to change password")
 		return
 	}
+
+	slog.Warn("audit", "action", "password_changed", "actor", claims.Subject)
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "password changed"})
 }

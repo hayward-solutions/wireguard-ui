@@ -104,6 +104,8 @@ func (h *ACLHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Warn("audit", "action", "acl_rule_created", "actor", actorFromRequest(r), "target_id", rule.ID, "target_name", rule.Name)
+
 	h.reloadACL(r)
 	writeJSON(w, http.StatusCreated, rule)
 }
@@ -179,6 +181,8 @@ func (h *ACLHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Warn("audit", "action", "acl_rule_updated", "actor", actorFromRequest(r), "target_id", rule.ID, "target_name", rule.Name)
+
 	h.reloadACL(r)
 	writeJSON(w, http.StatusOK, rule)
 }
@@ -201,6 +205,8 @@ func (h *ACLHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to delete rule")
 		return
 	}
+
+	slog.Warn("audit", "action", "acl_rule_deleted", "actor", actorFromRequest(r), "target_id", id, "target_name", rule.Name)
 
 	h.reloadACL(r)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "rule deleted"})

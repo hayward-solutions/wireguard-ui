@@ -99,12 +99,14 @@ func (h *AuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.store.GetUserByUsername(r.Context(), req.Username)
 	if err != nil || user == nil {
+		slog.Warn("audit", "action", "login_failure", "target_name", req.Username, "method", "local", "reason", "unknown_user")
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid credentials")
 		return
 	}
 
 	// Check account lockout
 	if user.LockedUntil != nil && user.LockedUntil.After(time.Now()) {
+		slog.Warn("audit", "action", "login_failure", "target_name", user.Username, "method", "local", "reason", "account_locked")
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many failed attempts, try again later")
 		return
 	}
@@ -121,6 +123,7 @@ func (h *AuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("account locked due to failed login attempts",
 				"username", user.Username, "attempts", attempts, "lock_duration", lockDuration)
 		}
+		slog.Warn("audit", "action", "login_failure", "target_name", user.Username, "method", "local", "reason", "invalid_password")
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid credentials")
 		return
 	}
@@ -134,6 +137,8 @@ func (h *AuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.issueSessionAndToken(w, r, user)
+
+	slog.Warn("audit", "action", "login_success", "actor", user.ID, "target_name", user.Username, "method", "local")
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"user": map[string]string{
@@ -183,6 +188,7 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	oidcUser, err := h.oidc.Exchange(r.Context(), code)
 	if err != nil {
 		slog.Error("oidc exchange failed", "error", err)
+		slog.Warn("audit", "action", "login_failure", "method", "oidc", "reason", "exchange_failed")
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authentication failed")
 		return
 	}
@@ -205,9 +211,13 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		user = existing
 		// Sync role from IdP group membership on every login
 		if user.Role != role {
+			oldRole := user.Role
 			user.Role = role
 			if err := h.store.UpdateUser(r.Context(), user); err != nil {
 				slog.Error("update oidc user role failed", "error", err)
+			} else {
+				slog.Warn("audit", "action", "role_changed", "actor", user.ID, "target_name", user.Username,
+					"old_role", oldRole, "new_role", role, "method", "oidc_sync")
 			}
 		}
 	} else {
@@ -237,10 +247,15 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 	h.issueSessionAndToken(w, r, user)
 
+	slog.Warn("audit", "action", "login_success", "actor", user.ID, "target_name", user.Username, "method", "oidc")
+
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
+	actor := actorFromRequest(r)
+	slog.Warn("audit", "action", "logout", "actor", actor)
+
 	// Revoke server-side session
 	if sessionCookie, err := r.Cookie("session"); err == nil && sessionCookie.Value != "" {
 		if err := h.store.RevokeSession(r.Context(), sessionCookie.Value); err != nil {

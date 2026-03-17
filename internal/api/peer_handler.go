@@ -189,6 +189,8 @@ func (h *PeerHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Warn("audit", "action", "peer_created", "actor", actorFromRequest(r), "target_id", peer.ID, "target_name", peer.Name, "address", peer.Address)
+
 	// Add to WireGuard interface
 	if err := h.wg.AddPeer(peer); err != nil {
 		slog.Error("add peer to wg", "error", err)
@@ -235,6 +237,8 @@ func (h *PeerHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Warn("audit", "action", "peer_updated", "actor", actorFromRequest(r), "target_id", peer.ID, "target_name", peer.Name)
+
 	writeJSON(w, http.StatusOK, peer)
 }
 
@@ -255,6 +259,8 @@ func (h *PeerHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Warn("audit", "action", "peer_deleted", "actor", actorFromRequest(r), "target_id", peer.ID, "target_name", peer.Name)
+
 	h.reloadACL(r)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "peer deleted"})
 }
@@ -271,6 +277,8 @@ func (h *PeerHandler) HandleToggle(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to toggle peer")
 		return
 	}
+
+	slog.Warn("audit", "action", "peer_toggled", "actor", actorFromRequest(r), "target_id", peer.ID, "target_name", peer.Name, "enabled", peer.Enabled)
 
 	if peer.Enabled {
 		h.wg.AddPeer(peer)
