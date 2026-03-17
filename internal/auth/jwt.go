@@ -47,6 +47,11 @@ func (m *JWTManager) Issue(subject, email, name, role string) (string, error) {
 	return signed, nil
 }
 
+// Expiry returns the configured token lifetime.
+func (m *JWTManager) Expiry() time.Duration {
+	return m.expiry
+}
+
 func (m *JWTManager) Validate(tokenStr string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {

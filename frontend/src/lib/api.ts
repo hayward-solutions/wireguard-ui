@@ -5,6 +5,7 @@ interface APIResponse<T> {
 
 class APIClient {
 	private baseURL: string;
+	private refreshing: Promise<boolean> | null = null;
 
 	constructor(baseURL = '') {
 		this.baseURL = baseURL;
@@ -24,6 +25,21 @@ class APIClient {
 		const res = await fetch(`${this.baseURL}${path}`, opts);
 
 		if (res.status === 401) {
+			// Attempt to refresh the session (once)
+			const refreshed = await this.tryRefresh();
+			if (refreshed) {
+				// Retry the original request
+				const retry = await fetch(`${this.baseURL}${path}`, opts);
+				if (retry.status === 401) {
+					window.location.href = '/login';
+					throw new Error('Unauthorized');
+				}
+				const json: APIResponse<T> = await retry.json();
+				if (json.error) {
+					throw new Error(json.error.message);
+				}
+				return json.data as T;
+			}
 			window.location.href = '/login';
 			throw new Error('Unauthorized');
 		}
@@ -35,6 +51,27 @@ class APIClient {
 		}
 
 		return json.data as T;
+	}
+
+	private async tryRefresh(): Promise<boolean> {
+		// Deduplicate concurrent refresh attempts
+		if (this.refreshing) {
+			return this.refreshing;
+		}
+		this.refreshing = (async () => {
+			try {
+				const res = await fetch(`${this.baseURL}/auth/refresh`, {
+					method: 'POST',
+					credentials: 'include'
+				});
+				return res.ok;
+			} catch {
+				return false;
+			} finally {
+				this.refreshing = null;
+			}
+		})();
+		return this.refreshing;
 	}
 
 	// Auth
