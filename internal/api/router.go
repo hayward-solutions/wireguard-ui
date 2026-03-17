@@ -34,6 +34,7 @@ type RouterConfig struct {
 	RequireHTTPS       bool
 	AllowCustomScripts bool
 	CORSOrigins        []string
+	TrustedProxies     []string
 }
 
 func NewRouter(cfg RouterConfig) *chi.Mux {
@@ -46,7 +47,7 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 
 	// Global middleware
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	r.Use(TrustedProxyMiddleware(cfg.TrustedProxies))
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	// Only allow credentialed cross-origin requests for explicitly listed origins.

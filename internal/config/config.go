@@ -57,6 +57,7 @@ type Config struct {
 	RequireHTTPS       bool
 	AllowCustomScripts bool
 	CORSOrigins        []string
+	TrustedProxies     []string
 
 	// Development
 	DevMode bool
@@ -114,6 +115,14 @@ func Load() (*Config, error) {
 		for _, o := range strings.Split(origins, ",") {
 			if trimmed := strings.TrimSpace(o); trimmed != "" {
 				cfg.CORSOrigins = append(cfg.CORSOrigins, trimmed)
+			}
+		}
+	}
+
+	if proxies := os.Getenv("TRUSTED_PROXIES"); proxies != "" {
+		for _, p := range strings.Split(proxies, ",") {
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				cfg.TrustedProxies = append(cfg.TrustedProxies, trimmed)
 			}
 		}
 	}
