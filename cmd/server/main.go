@@ -235,6 +235,7 @@ func run() error {
 		OIDCAdminGroup:     cfg.OIDCAdminGroup,
 		RequireHTTPS:       cfg.RequireHTTPS,
 		AllowCustomScripts: cfg.AllowCustomScripts,
+		CORSOrigins:        cfg.CORSOrigins,
 	})
 
 	// Start HTTP server
