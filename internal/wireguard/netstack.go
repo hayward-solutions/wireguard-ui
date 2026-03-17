@@ -78,6 +78,19 @@ func (m *NetstackManager) Start(cfg *domain.ServerConfig) error {
 		return fmt.Errorf("create NIC: %v", tcpipErr)
 	}
 
+	// Enable promiscuous mode so the NIC accepts packets for ANY destination IP,
+	// not just the local VPN address. Without this, traffic from peers destined for
+	// external IPs (DNS servers, websites, etc.) is silently dropped.
+	if tcpipErr := m.gvStack.SetPromiscuousMode(1, true); tcpipErr != nil {
+		return fmt.Errorf("set promiscuous mode: %v", tcpipErr)
+	}
+
+	// Enable spoofing so the NIC can send response packets with any source IP
+	// (the real destination IPs, not just the VPN address).
+	if tcpipErr := m.gvStack.SetSpoofing(1, true); tcpipErr != nil {
+		return fmt.Errorf("set spoofing: %v", tcpipErr)
+	}
+
 	// Add local address
 	var protoNum tcpip.NetworkProtocolNumber
 	if localAddr.Is4() {
