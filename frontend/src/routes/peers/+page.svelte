@@ -35,12 +35,12 @@
 <div>
 	<div class="flex items-center justify-between">
 		<div>
-			<h1 class="text-2xl font-bold text-zinc-900">Peers</h1>
-			<p class="mt-1 text-zinc-500">{$peers.length} peer{$peers.length !== 1 ? 's' : ''} configured</p>
+			<h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Peers</h1>
+			<p class="mt-1 text-zinc-500 dark:text-zinc-400">{$peers.length} peer{$peers.length !== 1 ? 's' : ''} configured</p>
 		</div>
 		<button
 			onclick={() => (showCreate = true)}
-			class="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
+			class="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
 		>
 			<Plus size={16} />
 			Add Peer
@@ -49,20 +49,20 @@
 
 	<div class="mt-6 flex items-center gap-3">
 		<div class="relative flex-1">
-			<Search size={16} class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+			<Search size={16} class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
 			<input
 				type="text"
 				bind:value={search}
 				placeholder="Search peers..."
-				class="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-10 pr-4 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none"
+				class="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-10 pr-4 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-500"
 			/>
 		</div>
-		<div class="flex items-center rounded-lg border border-zinc-200 bg-white p-0.5">
+		<div class="flex items-center rounded-lg border border-zinc-200 bg-white p-0.5 dark:border-zinc-700 dark:bg-zinc-900">
 			<button
 				onclick={() => setView('table')}
 				class="rounded-md p-1.5 transition-colors {view === 'table'
-					? 'bg-zinc-900 text-white'
-					: 'text-zinc-400 hover:text-zinc-600'}"
+					? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+					: 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300'}"
 				title="Table view"
 			>
 				<List size={16} />
@@ -70,8 +70,8 @@
 			<button
 				onclick={() => setView('cards')}
 				class="rounded-md p-1.5 transition-colors {view === 'cards'
-					? 'bg-zinc-900 text-white'
-					: 'text-zinc-400 hover:text-zinc-600'}"
+					? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+					: 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300'}"
 				title="Card view"
 			>
 				<LayoutGrid size={16} />
@@ -87,7 +87,7 @@
 				{#each filteredPeers as peer (peer.id)}
 					<PeerCard {peer} stats={$stats.get(peer.public_key)} />
 				{:else}
-					<div class="col-span-full py-12 text-center text-zinc-400">
+					<div class="col-span-full py-12 text-center text-zinc-400 dark:text-zinc-500">
 						{search ? 'No peers match your search' : 'No peers yet. Click "Add Peer" to get started.'}
 					</div>
 				{/each}

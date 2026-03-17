@@ -29,10 +29,10 @@
 	}
 </script>
 
-<div class="overflow-hidden rounded-xl border border-zinc-200 bg-white">
+<div class="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
 	<table class="w-full text-left text-sm">
 		<thead>
-			<tr class="border-b border-zinc-100 bg-zinc-50 text-xs font-medium uppercase tracking-wider text-zinc-500">
+			<tr class="border-b border-zinc-100 bg-zinc-50 text-xs font-medium uppercase tracking-wider text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-400">
 				<th class="px-4 py-3">Status</th>
 				<th class="px-4 py-3">Name</th>
 				{#if $user?.role === 'admin'}
@@ -44,34 +44,34 @@
 				<th class="px-4 py-3 text-right">Actions</th>
 			</tr>
 		</thead>
-		<tbody class="divide-y divide-zinc-100">
+		<tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
 			{#each peers as peer (peer.id)}
 				{@const stats = getStats(peer)}
 				{@const connected = stats?.connected ?? false}
-				<tr class="transition-colors hover:bg-zinc-50">
+				<tr class="transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800">
 					<td class="px-4 py-3">
 						<div
 							class="mx-auto h-2.5 w-2.5 rounded-full {connected
 								? 'bg-emerald-500'
-								: 'bg-zinc-300'}"
+								: 'bg-zinc-300 dark:bg-zinc-600'}"
 							title={connected ? 'Connected' : 'Disconnected'}
 						></div>
 					</td>
 					<td class="px-4 py-3">
-						<span class="font-medium text-zinc-900">{peer.name}</span>
+						<span class="font-medium text-zinc-900 dark:text-zinc-100">{peer.name}</span>
 					</td>
 					{#if $user?.role === 'admin'}
-						<td class="px-4 py-3 text-zinc-500">{peer.created_by_name ?? '—'}</td>
+						<td class="px-4 py-3 text-zinc-500 dark:text-zinc-400">{peer.created_by_name ?? '—'}</td>
 					{/if}
-					<td class="px-4 py-3 font-mono text-zinc-600">{peer.address}</td>
-					<td class="px-4 py-3 text-zinc-500">
+					<td class="px-4 py-3 font-mono text-zinc-600 dark:text-zinc-400">{peer.address}</td>
+					<td class="px-4 py-3 text-zinc-500 dark:text-zinc-400">
 						{stats ? formatTimeAgo(stats.last_handshake) : '—'}
 					</td>
-					<td class="px-4 py-3 text-zinc-500">
+					<td class="px-4 py-3 text-zinc-500 dark:text-zinc-400">
 						{#if stats}
-							<span class="text-zinc-400">↓</span> {formatBytes(stats.transfer_rx)}
-							<span class="mx-1 text-zinc-300">/</span>
-							<span class="text-zinc-400">↑</span> {formatBytes(stats.transfer_tx)}
+							<span class="text-zinc-400 dark:text-zinc-500">↓</span> {formatBytes(stats.transfer_rx)}
+							<span class="mx-1 text-zinc-300 dark:text-zinc-600">/</span>
+							<span class="text-zinc-400 dark:text-zinc-500">↑</span> {formatBytes(stats.transfer_tx)}
 						{:else}
 							—
 						{/if}
@@ -80,14 +80,14 @@
 						<div class="flex items-center justify-end gap-1">
 							<button
 								onclick={() => togglePeer(peer.id)}
-								class="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700"
+								class="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
 								title={peer.enabled ? 'Disable' : 'Enable'}
 							>
 								<Power size={15} class={peer.enabled ? 'text-emerald-500' : ''} />
 							</button>
 							<a
 								href={api.getConfigURL(peer.id)}
-								class="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700"
+								class="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
 								title="Download config"
 								download
 							>
@@ -95,7 +95,7 @@
 							</a>
 							<button
 								onclick={() => (qrPeerId = qrPeerId === peer.id ? null : peer.id)}
-								class="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700"
+								class="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
 								title="Show QR code"
 							>
 								<QrCode size={15} />
@@ -103,7 +103,7 @@
 							<button
 								onclick={() => handleDelete(peer)}
 								disabled={deleting === peer.id}
-								class="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600"
+								class="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-zinc-500 dark:hover:bg-red-950 dark:hover:text-red-400"
 								title="Delete peer"
 							>
 								<Trash2 size={15} />
@@ -113,7 +113,7 @@
 				</tr>
 				{#if qrPeerId === peer.id}
 					<tr>
-						<td colspan={$user?.role === 'admin' ? 7 : 6} class="bg-zinc-50 px-4 py-4">
+						<td colspan={$user?.role === 'admin' ? 7 : 6} class="bg-zinc-50 px-4 py-4 dark:bg-zinc-800">
 							<div class="flex justify-center">
 								<img
 									src={api.getQRCodeURL(peer.id)}
@@ -126,7 +126,7 @@
 				{/if}
 			{:else}
 				<tr>
-					<td colspan={$user?.role === 'admin' ? 7 : 6} class="py-12 text-center text-zinc-400">
+					<td colspan={$user?.role === 'admin' ? 7 : 6} class="py-12 text-center text-zinc-400 dark:text-zinc-500">
 						No peers found
 					</td>
 				</tr>

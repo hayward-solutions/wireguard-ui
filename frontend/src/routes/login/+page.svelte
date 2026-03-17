@@ -47,50 +47,50 @@
 	}
 </script>
 
-<div class="flex min-h-screen items-center justify-center bg-zinc-50">
+<div class="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-zinc-950">
 	<div class="w-full max-w-sm">
 		<div class="text-center">
-			<div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-zinc-900">
-				<Shield size={32} class="text-white" />
+			<div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-zinc-900 dark:bg-zinc-100">
+				<Shield size={32} class="text-white dark:text-zinc-900" />
 			</div>
-			<h1 class="mt-6 text-2xl font-bold text-zinc-900">WireGuard UI</h1>
-			<p class="mt-2 text-zinc-500">Sign in to manage your VPN</p>
+			<h1 class="mt-6 text-2xl font-bold text-zinc-900 dark:text-zinc-100">WireGuard UI</h1>
+			<p class="mt-2 text-zinc-500 dark:text-zinc-400">Sign in to manage your VPN</p>
 		</div>
 
 		{#if authInfo}
 			{#if authInfo.local_enabled}
 				<form onsubmit={handleLocalLogin} class="mt-8 space-y-4">
 					<div>
-						<label for="username" class="block text-sm font-medium text-zinc-700">Username</label>
+						<label for="username" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Username</label>
 						<input
 							id="username"
 							type="text"
 							bind:value={username}
 							required
 							autocomplete="username"
-							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
 						/>
 					</div>
 					<div>
-						<label for="password" class="block text-sm font-medium text-zinc-700">Password</label>
+						<label for="password" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Password</label>
 						<input
 							id="password"
 							type="password"
 							bind:value={password}
 							required
 							autocomplete="current-password"
-							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
 						/>
 					</div>
 
 					{#if error}
-						<p class="text-sm text-red-600">{error}</p>
+						<p class="text-sm text-red-600 dark:text-red-400">{error}</p>
 					{/if}
 
 					<button
 						type="submit"
 						disabled={loading}
-						class="w-full rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
+						class="w-full rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
 					>
 						{loading ? 'Signing in...' : 'Sign in'}
 					</button>
@@ -100,22 +100,22 @@
 			{#if authInfo.oidc_enabled}
 				{#if authInfo.local_enabled}
 					<div class="my-6 flex items-center gap-3">
-						<div class="flex-1 border-t border-zinc-200"></div>
-						<span class="text-xs text-zinc-400">or</span>
-						<div class="flex-1 border-t border-zinc-200"></div>
+						<div class="flex-1 border-t border-zinc-200 dark:border-zinc-700"></div>
+						<span class="text-xs text-zinc-400 dark:text-zinc-500">or</span>
+						<div class="flex-1 border-t border-zinc-200 dark:border-zinc-700"></div>
 					</div>
 				{/if}
 
 				<a
 					href="/auth/login"
-					class="mt-{authInfo.local_enabled ? '0' : '8'} inline-flex w-full items-center justify-center rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50"
+					class="mt-{authInfo.local_enabled ? '0' : '8'} inline-flex w-full items-center justify-center rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
 				>
 					Sign in with SSO
 				</a>
 			{/if}
 		{:else}
 			<div class="mt-8 flex justify-center">
-				<div class="h-6 w-6 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900"></div>
+				<div class="h-6 w-6 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900 dark:border-zinc-600 dark:border-t-zinc-100"></div>
 			</div>
 		{/if}
 	</div>
