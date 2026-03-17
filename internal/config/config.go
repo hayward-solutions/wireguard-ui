@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -54,6 +55,7 @@ type Config struct {
 	// Security
 	RequireHTTPS       bool
 	AllowCustomScripts bool
+	CORSOrigins        []string
 
 	// Development
 	DevMode bool
@@ -107,6 +109,14 @@ func Load() (*Config, error) {
 	cfg.WGNetstackMode = envOrDefault("WG_NETSTACK_MODE", "false") == "true"
 	cfg.WGMockMode = envOrDefault("WG_MOCK_MODE", "false") == "true"
 
+	if origins := os.Getenv("CORS_ORIGINS"); origins != "" {
+		for _, o := range strings.Split(origins, ",") {
+			if trimmed := strings.TrimSpace(o); trimmed != "" {
+				cfg.CORSOrigins = append(cfg.CORSOrigins, trimmed)
+			}
+		}
+	}
+
 	expiryStr := envOrDefault("JWT_EXPIRY", "24h")
 	cfg.JWTExpiry, err = time.ParseDuration(expiryStr)
 	if err != nil {
@@ -141,6 +151,9 @@ func (c *Config) validate() error {
 		}
 		if c.AdminPassword == "" {
 			c.AdminPassword = "admin"
+		}
+		if len(c.CORSOrigins) == 0 {
+			c.CORSOrigins = []string{"*"}
 		}
 		return nil
 	}
