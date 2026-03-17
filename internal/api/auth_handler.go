@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -8,6 +9,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/hayward-solutions/wireguard-ui/internal/acl"
 	"github.com/hayward-solutions/wireguard-ui/internal/auth"
 	"github.com/hayward-solutions/wireguard-ui/internal/database"
 	"github.com/hayward-solutions/wireguard-ui/internal/domain"
@@ -20,6 +23,7 @@ type AuthHandler struct {
 	store          database.Store
 	oidcAdminGroup string
 	secureCookie   bool
+	policyEngine   *acl.PolicyEngine
 }
 
 type AuthHandlerConfig struct {
@@ -28,6 +32,7 @@ type AuthHandlerConfig struct {
 	Store          database.Store
 	OIDCAdminGroup string
 	SecureCookie   bool
+	PolicyEngine   *acl.PolicyEngine
 }
 
 func NewAuthHandler(cfg AuthHandlerConfig) *AuthHandler {
@@ -37,6 +42,7 @@ func NewAuthHandler(cfg AuthHandlerConfig) *AuthHandler {
 		store:          cfg.Store,
 		oidcAdminGroup: cfg.OIDCAdminGroup,
 		secureCookie:   cfg.SecureCookie,
+		policyEngine:   cfg.PolicyEngine,
 	}
 }
 
@@ -199,6 +205,11 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Sync OIDC groups
+	if len(oidcUser.Groups) > 0 {
+		h.syncOIDCGroups(r.Context(), user.ID, oidcUser.Groups)
+	}
+
 	token, err := h.jwt.Issue(user.ID, user.Username, user.Name, user.Role)
 	if err != nil {
 		slog.Error("jwt issue failed", "error", err)
@@ -243,6 +254,40 @@ func (h *AuthHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 		"name":  claims.Name,
 		"role":  claims.Role,
 	})
+}
+
+func (h *AuthHandler) syncOIDCGroups(ctx context.Context, userID string, oidcGroups []string) {
+	var groupIDs []string
+	for _, name := range oidcGroups {
+		group, err := h.store.GetGroupByName(ctx, name)
+		if err != nil {
+			slog.Error("lookup oidc group", "name", name, "error", err)
+			continue
+		}
+		if group == nil {
+			group = &domain.Group{
+				ID:     uuid.New().String(),
+				Name:   name,
+				Source: domain.GroupSourceOIDC,
+			}
+			if err := h.store.CreateGroup(ctx, group); err != nil {
+				slog.Error("create oidc group", "name", name, "error", err)
+				continue
+			}
+			slog.Info("created OIDC group", "name", name, "id", group.ID)
+		}
+		groupIDs = append(groupIDs, group.ID)
+	}
+
+	if err := h.store.SyncOIDCGroups(ctx, userID, groupIDs); err != nil {
+		slog.Error("sync oidc groups", "user_id", userID, "error", err)
+	}
+
+	if h.policyEngine != nil {
+		if err := h.policyEngine.Reload(ctx, h.store); err != nil {
+			slog.Error("acl reload after oidc sync", "error", err)
+		}
+	}
 }
 
 func generateState() (string, error) {

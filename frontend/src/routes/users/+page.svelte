@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api, type User } from '$lib/api';
+	import { api, type User, type Group } from '$lib/api';
 	import { user as currentUser } from '$lib/stores/auth';
-	import { Plus, Trash2, KeyRound, Pencil, X } from 'lucide-svelte';
+	import { Plus, Trash2, KeyRound, Pencil, X, UsersRound } from 'lucide-svelte';
 	import { get } from 'svelte/store';
 
 	let users = $state<User[]>([]);
@@ -27,6 +27,13 @@
 	// Delete confirm
 	let deleteUser = $state<User | null>(null);
 
+	// Group management modal
+	let groupsUser = $state<User | null>(null);
+	let allGroups = $state<Group[]>([]);
+	let userGroupIds = $state<Set<string>>(new Set());
+	let groupsLoading = $state(false);
+	let groupsError = $state('');
+
 	async function loadUsers() {
 		try {
 			users = await api.listUsers();
@@ -34,6 +41,45 @@
 			error = e.message;
 		} finally {
 			loading = false;
+		}
+	}
+
+	async function openGroups(u: User) {
+		groupsUser = u;
+		groupsLoading = true;
+		groupsError = '';
+		try {
+			const [groups, userGroups] = await Promise.all([
+				api.listGroups(),
+				api.getUserGroups(u.id)
+			]);
+			allGroups = groups;
+			userGroupIds = new Set(userGroups.map((g: Group) => g.id));
+		} catch (e: any) {
+			groupsError = e.message;
+		} finally {
+			groupsLoading = false;
+		}
+	}
+
+	function toggleGroup(groupId: string) {
+		const next = new Set(userGroupIds);
+		if (next.has(groupId)) {
+			next.delete(groupId);
+		} else {
+			next.add(groupId);
+		}
+		userGroupIds = next;
+	}
+
+	async function saveGroups() {
+		if (!groupsUser) return;
+		groupsError = '';
+		try {
+			await api.setUserGroups(groupsUser.id, [...userGroupIds]);
+			groupsUser = null;
+		} catch (e: any) {
+			groupsError = e.message;
 		}
 	}
 
@@ -145,6 +191,9 @@
 							<td class="px-4 py-3 text-zinc-500 dark:text-zinc-400">{new Date(u.created_at).toLocaleDateString()}</td>
 							<td class="px-4 py-3">
 								<div class="flex items-center justify-end gap-1">
+									<button onclick={() => openGroups(u)} title="Manage groups" class="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300">
+										<UsersRound size={15} />
+									</button>
 									<button onclick={() => openEdit(u)} title="Edit" class="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300">
 										<Pencil size={15} />
 									</button>
@@ -299,6 +348,46 @@
 					class="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">Cancel</button>
 				<button onclick={handleDelete}
 					class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Delete</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Groups Modal -->
+{#if groupsUser}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60" onclick={() => (groupsUser = null)}>
+		<div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-zinc-900" onclick={(e) => e.stopPropagation()}>
+			<div class="flex items-center justify-between">
+				<h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Group Membership</h2>
+				<button onclick={() => (groupsUser = null)} class="text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"><X size={20} /></button>
+			</div>
+			<p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Manage groups for <strong>{groupsUser.username}</strong></p>
+			{#if groupsError}
+				<div class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">{groupsError}</div>
+			{/if}
+			{#if groupsLoading}
+				<div class="mt-6 text-center text-zinc-400 dark:text-zinc-500">Loading...</div>
+			{:else if allGroups.length === 0}
+				<div class="mt-6 text-center text-sm text-zinc-400 dark:text-zinc-500">No groups defined. Create groups first.</div>
+			{:else}
+				<div class="mt-4 max-h-64 space-y-1 overflow-y-auto">
+					{#each allGroups as group (group.id)}
+						<label class="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800">
+							<input type="checkbox" checked={userGroupIds.has(group.id)} onchange={() => toggleGroup(group.id)}
+								class="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800" />
+							<span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{group.name}</span>
+							{#if group.source === 'oidc'}
+								<span class="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900 dark:text-purple-300">OIDC</span>
+							{/if}
+						</label>
+					{/each}
+				</div>
+			{/if}
+			<div class="mt-6 flex justify-end gap-3">
+				<button onclick={() => (groupsUser = null)}
+					class="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">Cancel</button>
+				<button onclick={saveGroups} disabled={allGroups.length === 0}
+					class="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">Save</button>
 			</div>
 		</div>
 	</div>

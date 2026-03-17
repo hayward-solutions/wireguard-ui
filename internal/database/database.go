@@ -36,6 +36,28 @@ type Store interface {
 	DeleteAPIToken(ctx context.Context, id string) error
 	UpdateAPITokenLastUsed(ctx context.Context, id string) error
 
+	// Groups
+	ListGroups(ctx context.Context) ([]domain.Group, error)
+	GetGroup(ctx context.Context, id string) (*domain.Group, error)
+	GetGroupByName(ctx context.Context, name string) (*domain.Group, error)
+	CreateGroup(ctx context.Context, g *domain.Group) error
+	UpdateGroup(ctx context.Context, g *domain.Group) error
+	DeleteGroup(ctx context.Context, id string) error
+
+	// User-Group memberships
+	GetUserGroups(ctx context.Context, userID string) ([]domain.Group, error)
+	SetUserGroups(ctx context.Context, userID string, groupIDs []string) error
+	SyncOIDCGroups(ctx context.Context, userID string, groupIDs []string) error
+	GetGroupMembers(ctx context.Context, groupID string) ([]domain.User, error)
+
+	// ACL Rules
+	ListACLRules(ctx context.Context) ([]domain.ACLRule, error)
+	GetACLRule(ctx context.Context, id string) (*domain.ACLRule, error)
+	CreateACLRule(ctx context.Context, r *domain.ACLRule) error
+	UpdateACLRule(ctx context.Context, r *domain.ACLRule) error
+	DeleteACLRule(ctx context.Context, id string) error
+	GetEffectiveACLRules(ctx context.Context, userID string) ([]domain.ACLRule, error)
+
 	// Tunnels (stretch)
 	ListTunnels(ctx context.Context) ([]domain.Tunnel, error)
 	GetTunnel(ctx context.Context, id string) (*domain.Tunnel, error)

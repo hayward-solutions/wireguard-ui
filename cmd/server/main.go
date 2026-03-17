@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/hayward-solutions/wireguard-ui/frontend"
+	"github.com/hayward-solutions/wireguard-ui/internal/acl"
 	"github.com/hayward-solutions/wireguard-ui/internal/api"
 	"github.com/hayward-solutions/wireguard-ui/internal/auth"
 	"github.com/hayward-solutions/wireguard-ui/internal/config"
@@ -76,12 +77,20 @@ func run() error {
 		}
 	}
 
+	// Initialize ACL policy engine
+	policyEngine := acl.NewPolicyEngine()
+	if err := policyEngine.Reload(ctx, store); err != nil {
+		slog.Warn("initial ACL policy load failed", "error", err)
+	}
+
 	// Initialize WireGuard manager
 	var wg wireguard.Manager
 	if cfg.WGMockMode {
 		wg = wireguard.NewMockManager()
 	} else if cfg.WGNetstackMode {
-		wg = wireguard.NewNetstackManager()
+		nm := wireguard.NewNetstackManager()
+		nm.SetPolicyEngine(policyEngine)
+		wg = nm
 	} else if cfg.WGUserspaceMode {
 		wg, err = wireguard.NewUserspaceManager(cfg.WGInterfaceName)
 		if err != nil {
@@ -229,6 +238,7 @@ func run() error {
 		JWTManager:   jwtMgr,
 		OIDCProvider: oidcProvider,
 		Monitor:      mon,
+		PolicyEngine: policyEngine,
 		FrontendFS:   frontendFS,
 		DevMode:            cfg.DevMode,
 		AdminAPIKey:        cfg.AdminAPIKey,

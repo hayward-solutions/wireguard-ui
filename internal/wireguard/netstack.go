@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"strings"
 
+	"github.com/hayward-solutions/wireguard-ui/internal/acl"
 	"github.com/hayward-solutions/wireguard-ui/internal/domain"
 	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
@@ -29,10 +30,17 @@ type NetstackManager struct {
 	gvStack   *stack.Stack
 	ep        *channel.Endpoint
 	forwarder *netstackForwarder
+	acl       *acl.PolicyEngine
 }
 
 func NewNetstackManager() *NetstackManager {
 	return &NetstackManager{}
+}
+
+// SetPolicyEngine sets the ACL policy engine used to filter forwarded connections.
+// Must be called before Start. If not set, all traffic is forwarded.
+func (m *NetstackManager) SetPolicyEngine(engine *acl.PolicyEngine) {
+	m.acl = engine
 }
 
 func (m *NetstackManager) Start(cfg *domain.ServerConfig) error {
@@ -112,7 +120,7 @@ func (m *NetstackManager) Start(cfg *domain.ServerConfig) error {
 
 	// Register TCP/UDP forwarders before creating the WireGuard device.
 	// Pass the local VPN address so traffic to our own IP is rewritten to 127.0.0.1.
-	m.forwarder = startForwarder(m.gvStack, localAddr.String())
+	m.forwarder = startForwarder(m.gvStack, localAddr.String(), m.acl)
 
 	// Create the netTun-compatible tun.Device backed by the channel endpoint
 	tunDev := &netstackTun{

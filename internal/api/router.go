@@ -7,8 +7,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/hayward-solutions/wireguard-ui/internal/acl"
 	"github.com/hayward-solutions/wireguard-ui/internal/auth"
 	"github.com/hayward-solutions/wireguard-ui/internal/database"
+	"github.com/hayward-solutions/wireguard-ui/internal/domain"
 	"github.com/hayward-solutions/wireguard-ui/internal/monitor"
 	"github.com/hayward-solutions/wireguard-ui/internal/wireguard"
 )
@@ -19,6 +21,7 @@ type RouterConfig struct {
 	JWTManager   *auth.JWTManager
 	OIDCProvider *auth.OIDCProvider
 	Monitor      *monitor.Monitor
+	PolicyEngine *acl.PolicyEngine
 	FrontendFS   fs.FS
 	DevMode            bool
 	AdminAPIKey        string
@@ -54,6 +57,7 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		Store:          cfg.Store,
 		OIDCAdminGroup: cfg.OIDCAdminGroup,
 		SecureCookie:   cfg.RequireHTTPS,
+		PolicyEngine:   cfg.PolicyEngine,
 	})
 
 	// Health check (unauthenticated)
@@ -83,7 +87,7 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		r.With(RequireAdmin).Post("/api/v1/server/apply", serverHandler.HandleApply)
 
 		// Peers (ownership enforced in handlers)
-		peerHandler := NewPeerHandler(cfg.Store, cfg.WG)
+		peerHandler := NewPeerHandler(cfg.Store, cfg.WG, cfg.PolicyEngine)
 		r.Get("/api/v1/peers", peerHandler.HandleList)
 		r.Post("/api/v1/peers", peerHandler.HandleCreate)
 		r.Get("/api/v1/peers/{id}", peerHandler.HandleGet)
@@ -109,6 +113,33 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		r.Get("/api/v1/me/tokens", tokenHandler.HandleList)
 		r.Post("/api/v1/me/tokens", tokenHandler.HandleCreate)
 		r.Delete("/api/v1/me/tokens/{id}", tokenHandler.HandleDelete)
+
+		// Groups (admin only)
+		groupHandler := NewGroupHandler(cfg.Store, cfg.PolicyEngine)
+		r.Route("/api/v1/groups", func(r chi.Router) {
+			r.Use(RequireAdmin)
+			r.Get("/", groupHandler.HandleList)
+			r.Post("/", groupHandler.HandleCreate)
+			r.Get("/{id}", groupHandler.HandleGet)
+			r.Put("/{id}", groupHandler.HandleUpdate)
+			r.Delete("/{id}", groupHandler.HandleDelete)
+			r.Get("/{id}/members", groupHandler.HandleMembers)
+		})
+
+		// ACL rules (admin only)
+		aclHandler := NewACLHandler(cfg.Store, cfg.PolicyEngine)
+		r.Route("/api/v1/acls", func(r chi.Router) {
+			r.Use(RequireAdmin)
+			r.Get("/", aclHandler.HandleList)
+			r.Post("/", aclHandler.HandleCreate)
+			r.Get("/effective/{userID}", aclHandler.HandleEffective)
+			r.Post("/reload", aclHandler.HandleReload)
+			r.Get("/{id}", aclHandler.HandleGet)
+			r.Put("/{id}", aclHandler.HandleUpdate)
+			r.Delete("/{id}", aclHandler.HandleDelete)
+		})
+
+		// User management (admin only)
 		r.Route("/api/v1/users", func(r chi.Router) {
 			r.Use(RequireAdmin)
 			r.Get("/", userHandler.HandleList)
@@ -117,6 +148,19 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 			r.Put("/{id}", userHandler.HandleUpdate)
 			r.Delete("/{id}", userHandler.HandleDelete)
 			r.Post("/{id}/reset-password", userHandler.HandleResetPassword)
+			r.Put("/{id}/groups", groupHandler.HandleSetUserGroups)
+			r.Get("/{id}/groups", func(w http.ResponseWriter, r *http.Request) {
+				userID := chi.URLParam(r, "id")
+				groups, err := cfg.Store.GetUserGroups(r.Context(), userID)
+				if err != nil {
+					writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to get user groups")
+					return
+				}
+				if groups == nil {
+					groups = []domain.Group{}
+				}
+				writeJSON(w, http.StatusOK, groups)
+			})
 		})
 	})
 

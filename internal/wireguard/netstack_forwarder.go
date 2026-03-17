@@ -5,10 +5,12 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/netip"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/hayward-solutions/wireguard-ui/internal/acl"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
@@ -27,15 +29,17 @@ type netstackForwarder struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	wg        sync.WaitGroup
-	localAddr string // the server's VPN address (e.g., "10.0.0.1")
+	localAddr string             // the server's VPN address (e.g., "10.0.0.1")
+	acl       *acl.PolicyEngine  // nil means allow-all (backwards compatible)
 }
 
 // startForwarder registers TCP and UDP forwarding handlers on the gVisor stack
 // and returns a forwarder that can be stopped.
 // localAddr is the server's VPN IP — traffic to this address is rewritten to 127.0.0.1.
-func startForwarder(s *stack.Stack, localAddr string) *netstackForwarder {
+// policyEngine is optional — if nil, all traffic is forwarded (no ACL enforcement).
+func startForwarder(s *stack.Stack, localAddr string, policyEngine *acl.PolicyEngine) *netstackForwarder {
 	ctx, cancel := context.WithCancel(context.Background())
-	f := &netstackForwarder{ctx: ctx, cancel: cancel, localAddr: localAddr}
+	f := &netstackForwarder{ctx: ctx, cancel: cancel, localAddr: localAddr, acl: policyEngine}
 
 	// TCP forwarder: intercept all incoming TCP connections and proxy to host network.
 	tcpFwd := tcp.NewForwarder(s, 0, 65535, func(r *tcp.ForwarderRequest) {
@@ -69,6 +73,20 @@ func (f *netstackForwarder) resolveHostAddr(gvisorIP string, port int) string {
 
 func (f *netstackForwarder) handleTCP(r *tcp.ForwarderRequest) {
 	id := r.ID()
+
+	// ACL check: deny traffic not explicitly allowed
+	if f.acl != nil {
+		dstIP, ok := netip.AddrFromSlice(id.LocalAddress.AsSlice())
+		if ok {
+			srcIP := id.RemoteAddress.String()
+			if !f.acl.Check(srcIP, "tcp", dstIP, id.LocalPort) {
+				slog.Debug("netstack tcp: acl denied", "src", srcIP, "dst_ip", dstIP, "dst_port", id.LocalPort)
+				r.Complete(true) // RST
+				return
+			}
+		}
+	}
+
 	dstAddr := f.resolveHostAddr(id.LocalAddress.String(), int(id.LocalPort))
 
 	// Dial the real destination on the host network.
@@ -115,6 +133,19 @@ func relay(a, b net.Conn) {
 
 func (f *netstackForwarder) handleUDP(r *udp.ForwarderRequest) {
 	id := r.ID()
+
+	// ACL check: deny traffic not explicitly allowed
+	if f.acl != nil {
+		dstIP, ok := netip.AddrFromSlice(id.LocalAddress.AsSlice())
+		if ok {
+			srcIP := id.RemoteAddress.String()
+			if !f.acl.Check(srcIP, "udp", dstIP, id.LocalPort) {
+				slog.Debug("netstack udp: acl denied", "src", srcIP, "dst_ip", dstIP, "dst_port", id.LocalPort)
+				return
+			}
+		}
+	}
+
 	dstAddr := f.resolveHostAddr(id.LocalAddress.String(), int(id.LocalPort))
 
 	// Create gVisor-side UDP endpoint.

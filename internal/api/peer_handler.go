@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/hayward-solutions/wireguard-ui/internal/acl"
 	"github.com/hayward-solutions/wireguard-ui/internal/auth"
 	"github.com/hayward-solutions/wireguard-ui/internal/database"
 	"github.com/hayward-solutions/wireguard-ui/internal/domain"
@@ -13,12 +14,13 @@ import (
 )
 
 type PeerHandler struct {
-	store database.Store
-	wg    wireguard.Manager
+	store  database.Store
+	wg     wireguard.Manager
+	engine *acl.PolicyEngine
 }
 
-func NewPeerHandler(store database.Store, wg wireguard.Manager) *PeerHandler {
-	return &PeerHandler{store: store, wg: wg}
+func NewPeerHandler(store database.Store, wg wireguard.Manager, engine *acl.PolicyEngine) *PeerHandler {
+	return &PeerHandler{store: store, wg: wg, engine: engine}
 }
 
 func (h *PeerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
@@ -193,6 +195,7 @@ func (h *PeerHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		// Peer is saved in DB but not active — non-fatal
 	}
 
+	h.reloadACL(r)
 	writeJSON(w, http.StatusCreated, peer)
 }
 
@@ -252,6 +255,7 @@ func (h *PeerHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.reloadACL(r)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "peer deleted"})
 }
 
@@ -274,5 +278,14 @@ func (h *PeerHandler) HandleToggle(w http.ResponseWriter, r *http.Request) {
 		h.wg.RemovePeer(peer.PublicKey)
 	}
 
+	h.reloadACL(r)
 	writeJSON(w, http.StatusOK, peer)
+}
+
+func (h *PeerHandler) reloadACL(r *http.Request) {
+	if h.engine != nil {
+		if err := h.engine.Reload(r.Context(), h.store); err != nil {
+			slog.Error("acl reload failed", "error", err)
+		}
+	}
 }
