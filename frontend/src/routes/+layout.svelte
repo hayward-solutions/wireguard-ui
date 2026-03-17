@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import { checkAuth, user, loading } from '$lib/stores/auth';
+	import { initTheme } from '$lib/stores/theme';
 	import { onMount } from 'svelte';
 	import { startStatsStream, stopStatsStream } from '$lib/stores/stats';
 
@@ -12,6 +13,7 @@
 	const isLoginPage = $derived(page.url.pathname === '/login');
 
 	onMount(() => {
+		initTheme();
 		checkAuth();
 		return () => stopStatsStream();
 	});
@@ -34,13 +36,13 @@
 </script>
 
 {#if $loading}
-	<div class="flex h-screen items-center justify-center bg-zinc-50">
-		<div class="h-8 w-8 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900"></div>
+	<div class="flex h-screen items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+		<div class="h-8 w-8 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900 dark:border-zinc-600 dark:border-t-zinc-100"></div>
 	</div>
 {:else if isLoginPage || !$user}
 	{@render children()}
 {:else}
-	<div class="flex h-screen bg-zinc-50">
+	<div class="flex h-screen bg-zinc-50 dark:bg-zinc-950">
 		<Sidebar />
 		<main class="flex-1 overflow-auto">
 			<div class="mx-auto max-w-6xl p-8">

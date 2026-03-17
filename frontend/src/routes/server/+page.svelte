@@ -59,20 +59,20 @@
 </script>
 
 <div>
-	<h1 class="text-2xl font-bold text-zinc-900">Server Configuration</h1>
-	<p class="mt-1 text-zinc-500">Manage your WireGuard server settings</p>
+	<h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Server Configuration</h1>
+	<p class="mt-1 text-zinc-500 dark:text-zinc-400">Manage your WireGuard server settings</p>
 
 	{#if config}
-		<div class="mt-8 rounded-xl border border-zinc-200 bg-white p-6">
+		<div class="mt-8 rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
 			<div class="mb-6">
-				<label class="block text-sm font-medium text-zinc-700">Public Key</label>
+				<label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Public Key</label>
 				<div class="mt-1 flex items-center gap-2">
-					<code class="flex-1 rounded-lg bg-zinc-50 px-3 py-2 font-mono text-sm text-zinc-700">
+					<code class="flex-1 rounded-lg bg-zinc-50 px-3 py-2 font-mono text-sm text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
 						{config.public_key}
 					</code>
 					<button
 						onclick={copyPublicKey}
-						class="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+						class="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
 					>
 						{#if copiedKey}
 							<Check size={16} class="text-emerald-500" />
@@ -86,108 +86,108 @@
 			<form onsubmit={handleSave} class="space-y-5">
 				<div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
 					<div>
-						<label for="endpoint" class="block text-sm font-medium text-zinc-700">Endpoint</label>
+						<label for="endpoint" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Endpoint</label>
 						<input
 							id="endpoint"
 							type="text"
 							bind:value={config.endpoint}
-							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
 						/>
 					</div>
 					<div>
-						<label for="listen_port" class="block text-sm font-medium text-zinc-700">Listen Port</label>
+						<label for="listen_port" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Listen Port</label>
 						<input
 							id="listen_port"
 							type="number"
 							bind:value={config.listen_port}
-							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
 						/>
 					</div>
 					<div>
-						<label for="address" class="block text-sm font-medium text-zinc-700">Address (CIDR)</label>
+						<label for="address" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Address (CIDR)</label>
 						<input
 							id="address"
 							type="text"
 							bind:value={config.address}
-							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
 						/>
 					</div>
 					<div>
-						<label for="dns" class="block text-sm font-medium text-zinc-700">DNS</label>
+						<label for="dns" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">DNS</label>
 						<input
 							id="dns"
 							type="text"
 							bind:value={config.dns}
-							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
 						/>
 					</div>
 					<div>
-						<label for="mtu" class="block text-sm font-medium text-zinc-700">MTU</label>
+						<label for="mtu" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">MTU</label>
 						<input
 							id="mtu"
 							type="number"
 							bind:value={config.mtu}
-							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
 						/>
 					</div>
 				</div>
 
-				<div class="col-span-full border-t border-zinc-100 pt-5">
-					<h3 class="text-sm font-semibold text-zinc-900">Peer Defaults</h3>
-					<p class="mt-0.5 text-xs text-zinc-400">Applied to new peers when not overridden</p>
+				<div class="col-span-full border-t border-zinc-100 pt-5 dark:border-zinc-800">
+					<h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Peer Defaults</h3>
+					<p class="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">Applied to new peers when not overridden</p>
 				</div>
 
 				<div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
 					<div>
-						<label for="default_allowed_ips" class="block text-sm font-medium text-zinc-700">Allowed IPs</label>
+						<label for="default_allowed_ips" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Allowed IPs</label>
 						<input
 							id="default_allowed_ips"
 							type="text"
 							bind:value={config.default_allowed_ips}
 							placeholder="0.0.0.0/0, ::/0"
-							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
 						/>
 					</div>
 					<div>
-						<label for="default_dns" class="block text-sm font-medium text-zinc-700">DNS</label>
+						<label for="default_dns" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">DNS</label>
 						<input
 							id="default_dns"
 							type="text"
 							bind:value={config.default_dns}
 							placeholder="Falls back to server DNS if empty"
-							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
 						/>
 					</div>
 				</div>
 
-				<div class="col-span-full border-t border-zinc-100 pt-5">
-					<h3 class="text-sm font-semibold text-zinc-900">Hooks</h3>
+				<div class="col-span-full border-t border-zinc-100 pt-5 dark:border-zinc-800">
+					<h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Hooks</h3>
 				</div>
 
 				<div>
-					<label for="post_up" class="block text-sm font-medium text-zinc-700">Post Up</label>
+					<label for="post_up" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Post Up</label>
 					<input
 						id="post_up"
 						type="text"
 						bind:value={config.post_up}
 						placeholder="iptables -A FORWARD ..."
-						class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+						class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
 					/>
 				</div>
 
 				<div>
-					<label for="post_down" class="block text-sm font-medium text-zinc-700">Post Down</label>
+					<label for="post_down" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Post Down</label>
 					<input
 						id="post_down"
 						type="text"
 						bind:value={config.post_down}
 						placeholder="iptables -D FORWARD ..."
-						class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+						class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
 					/>
 				</div>
 
 				{#if error}
-					<p class="text-sm text-red-600">{error}</p>
+					<p class="text-sm text-red-600 dark:text-red-400">{error}</p>
 				{/if}
 				{#if success}
 					<p class="text-sm text-emerald-600">{success}</p>
@@ -198,7 +198,7 @@
 						type="button"
 						onclick={handleApply}
 						disabled={applying}
-						class="inline-flex items-center gap-2 rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+						class="inline-flex items-center gap-2 rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
 					>
 						<RefreshCw size={16} class={applying ? 'animate-spin' : ''} />
 						{applying ? 'Applying...' : 'Apply to Interface'}
@@ -206,7 +206,7 @@
 					<button
 						type="submit"
 						disabled={saving}
-						class="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+						class="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
 					>
 						{saving ? 'Saving...' : 'Save'}
 					</button>
@@ -214,10 +214,10 @@
 			</form>
 		</div>
 	{:else if error}
-		<div class="mt-8 rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">{error}</div>
+		<div class="mt-8 rounded-xl border border-red-200 bg-red-50 p-6 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">{error}</div>
 	{:else}
 		<div class="mt-8 flex justify-center py-12">
-			<div class="h-8 w-8 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900"></div>
+			<div class="h-8 w-8 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900 dark:border-zinc-600 dark:border-t-zinc-100"></div>
 		</div>
 	{/if}
 </div>
