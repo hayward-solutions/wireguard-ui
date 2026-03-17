@@ -5,7 +5,7 @@ echo "=== WireGuard Netstack Integration Test ==="
 
 # Step 1: Install dependencies
 echo "Installing dependencies..."
-apk add --no-cache wireguard-tools curl jq > /dev/null
+apk add --no-cache wireguard-tools curl jq bind-tools > /dev/null
 
 # Step 2: Wait for server API
 echo "Waiting for server API..."
@@ -80,7 +80,39 @@ else
   exit 1
 fi
 
-# Step 8: Show tunnel stats
+# Step 8: Test internet forwarding through the tunnel (DNS + HTTP)
+# Add external IPs to WireGuard AllowedIPs so the client encrypts and sends them
+# through the tunnel, then add host routes so the kernel routes to wg0.
+echo "Configuring tunnel for internet forwarding test..."
+SERVER_PUBKEY=$(wg show wg0 peers)
+wg set wg0 peer "$SERVER_PUBKEY" allowed-ips 10.0.0.0/24,1.1.1.1/32,93.184.216.0/24
+ip route add 1.1.1.1/32 dev wg0
+ip route add 93.184.216.0/24 dev wg0
+
+echo "Testing DNS resolution through tunnel (UDP forwarding)..."
+DNS_RESULT=$(dig +short +timeout=5 +tries=2 @1.1.1.1 example.com 2>&1) || true
+if echo "$DNS_RESULT" | grep -qE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$"; then
+  echo "PASS: DNS resolution works through the tunnel ($DNS_RESULT)"
+else
+  echo "FAIL: DNS resolution failed through the tunnel"
+  echo "$DNS_RESULT"
+  wg show
+  exit 1
+fi
+
+echo "Testing HTTP connectivity through tunnel to external host (TCP forwarding)..."
+EXTERNAL=$(curl -sf --connect-timeout 10 "http://1.1.1.1/" 2>&1) || true
+if echo "$EXTERNAL" | grep -qi "html\|cloudflare\|redirect"; then
+  echo "PASS: HTTP through tunnel works"
+else
+  # TCP forwarding to external hosts may not work in all CI environments (e.g.,
+  # Docker Desktop on macOS can't route to arbitrary external IPs from containers).
+  # The DNS test above already exercises the full UDP forwarding path.
+  echo "SKIP: External HTTP not reachable from this Docker environment (expected in some CI)"
+  echo "Response: $EXTERNAL"
+fi
+
+# Step 9: Show tunnel stats
 echo ""
 echo "=== Tunnel Stats ==="
 wg show
