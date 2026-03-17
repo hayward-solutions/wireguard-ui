@@ -20,10 +20,11 @@ type RouterConfig struct {
 	OIDCProvider *auth.OIDCProvider
 	Monitor      *monitor.Monitor
 	FrontendFS   fs.FS
-	DevMode        bool
-	AdminAPIKey    string
-	OIDCAdminGroup string
-	RequireHTTPS   bool
+	DevMode            bool
+	AdminAPIKey        string
+	OIDCAdminGroup     string
+	RequireHTTPS       bool
+	AllowCustomScripts bool
 }
 
 func NewRouter(cfg RouterConfig) *chi.Mux {
@@ -76,7 +77,7 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		r.Get("/auth/me", authHandler.HandleMe)
 
 		// Server config (read: all authenticated, write: admin only)
-		serverHandler := NewServerHandler(cfg.Store, cfg.WG)
+		serverHandler := NewServerHandler(cfg.Store, cfg.WG, cfg.AllowCustomScripts)
 		r.Get("/api/v1/server", serverHandler.HandleGet)
 		r.With(RequireAdmin).Put("/api/v1/server", serverHandler.HandleUpdate)
 		r.With(RequireAdmin).Post("/api/v1/server/apply", serverHandler.HandleApply)

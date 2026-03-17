@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -97,19 +98,29 @@ func (s *SQLiteStore) GetServerConfig(ctx context.Context) (*domain.ServerConfig
 		       post_up, post_down, endpoint,
 		       COALESCE(default_allowed_ips, '0.0.0.0/0, ::/0'),
 		       COALESCE(default_dns, ''),
+		       COALESCE(firewall_config, ''),
 		       created_at, updated_at
 		FROM server_config WHERE id = 'default'`)
 
 	var cfg domain.ServerConfig
+	var firewallJSON string
 	err := row.Scan(&cfg.ID, &cfg.PrivateKey, &cfg.PublicKey, &cfg.ListenPort,
 		&cfg.Address, &cfg.DNS, &cfg.MTU, &cfg.PostUp, &cfg.PostDown,
 		&cfg.Endpoint, &cfg.DefaultAllowedIPs, &cfg.DefaultDNS,
-		&cfg.CreatedAt, &cfg.UpdatedAt)
+		&firewallJSON, &cfg.CreatedAt, &cfg.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get server config: %w", err)
+	}
+
+	if firewallJSON != "" {
+		var fc domain.FirewallConfig
+		if err := json.Unmarshal([]byte(firewallJSON), &fc); err != nil {
+			return nil, fmt.Errorf("unmarshal firewall config: %w", err)
+		}
+		cfg.FirewallConfig = &fc
 	}
 
 	// Decrypt private key
@@ -130,9 +141,18 @@ func (s *SQLiteStore) SaveServerConfig(ctx context.Context, cfg *domain.ServerCo
 		return fmt.Errorf("encrypt server private key: %w", err)
 	}
 
+	var firewallJSON string
+	if cfg.FirewallConfig != nil {
+		b, err := json.Marshal(cfg.FirewallConfig)
+		if err != nil {
+			return fmt.Errorf("marshal firewall config: %w", err)
+		}
+		firewallJSON = string(b)
+	}
+
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO server_config (id, private_key, public_key, listen_port, address, dns, mtu, post_up, post_down, endpoint, default_allowed_ips, default_dns, created_at, updated_at)
-		VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO server_config (id, private_key, public_key, listen_port, address, dns, mtu, post_up, post_down, endpoint, default_allowed_ips, default_dns, firewall_config, created_at, updated_at)
+		VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			private_key = excluded.private_key,
 			public_key = excluded.public_key,
@@ -145,10 +165,11 @@ func (s *SQLiteStore) SaveServerConfig(ctx context.Context, cfg *domain.ServerCo
 			endpoint = excluded.endpoint,
 			default_allowed_ips = excluded.default_allowed_ips,
 			default_dns = excluded.default_dns,
+			firewall_config = excluded.firewall_config,
 			updated_at = excluded.updated_at`,
 		encPrivKey, cfg.PublicKey, cfg.ListenPort, cfg.Address, cfg.DNS,
 		cfg.MTU, cfg.PostUp, cfg.PostDown, cfg.Endpoint,
-		cfg.DefaultAllowedIPs, cfg.DefaultDNS, cfg.CreatedAt, cfg.UpdatedAt)
+		cfg.DefaultAllowedIPs, cfg.DefaultDNS, firewallJSON, cfg.CreatedAt, cfg.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("save server config: %w", err)
 	}

@@ -106,16 +106,16 @@ func run() error {
 			return err
 		}
 
-		// Build default PostUp/PostDown for NAT masquerade.
-		// In netstack mode these are skipped (no kernel interface for iptables).
-		var postUp, postDown string
+		// Build structured firewall config for NAT masquerade.
+		// In netstack mode this is skipped (no kernel interface for iptables).
+		var fwCfg *domain.FirewallConfig
 		if !cfg.WGNetstackMode {
-			// eth+ matches any ethN interface (Docker, ECS, etc.).
-			wgIface := cfg.WGInterfaceName
-			postUp = fmt.Sprintf("iptables -t nat -A POSTROUTING -s %s -o eth+ -j MASQUERADE; iptables -A FORWARD -i %s -j ACCEPT; iptables -A FORWARD -o %s -j ACCEPT",
-				cfg.WGAddress, wgIface, wgIface)
-			postDown = fmt.Sprintf("iptables -t nat -D POSTROUTING -s %s -o eth+ -j MASQUERADE; iptables -D FORWARD -i %s -j ACCEPT; iptables -D FORWARD -o %s -j ACCEPT",
-				cfg.WGAddress, wgIface, wgIface)
+			fwCfg = &domain.FirewallConfig{
+				EnableNAT:        true,
+				EnableForwarding: true,
+				NATSource:        cfg.WGAddress,
+				NATOutInterface:  "eth+",
+			}
 		}
 
 		serverCfg = &domain.ServerConfig{
@@ -126,8 +126,7 @@ func run() error {
 			Address:           cfg.WGAddress,
 			DNS:               cfg.WGDNS,
 			MTU:               cfg.WGMTU,
-			PostUp:            postUp,
-			PostDown:          postDown,
+			FirewallConfig:    fwCfg,
 			Endpoint:          cfg.WGEndpoint,
 			DefaultAllowedIPs: cfg.WGDefaultAllowedIPs,
 			DefaultDNS:        cfg.WGDNS,
@@ -136,7 +135,32 @@ func run() error {
 		if err := store.SaveServerConfig(ctx, serverCfg); err != nil {
 			return err
 		}
+	} else {
+		// Existing install: auto-migrate default PostUp/PostDown to structured FirewallConfig
+		if serverCfg.FirewallConfig == nil && serverCfg.PostUp != "" {
+			if wireguard.IsDefaultFirewallScript(serverCfg.PostUp, serverCfg.Address, cfg.WGInterfaceName) {
+				slog.Info("migrating default PostUp/PostDown to structured FirewallConfig")
+				serverCfg.FirewallConfig = &domain.FirewallConfig{
+					EnableNAT:        true,
+					EnableForwarding: true,
+					NATSource:        serverCfg.Address,
+					NATOutInterface:  "eth+",
+				}
+				serverCfg.PostUp = ""
+				serverCfg.PostDown = ""
+				if err := store.SaveServerConfig(ctx, serverCfg); err != nil {
+					return fmt.Errorf("migrate firewall config: %w", err)
+				}
+			} else if !cfg.AllowCustomScripts {
+				slog.Warn("custom PostUp/PostDown scripts detected but ALLOW_CUSTOM_SCRIPTS is not set; scripts will not be executed",
+					"post_up_length", len(serverCfg.PostUp),
+					"post_down_length", len(serverCfg.PostDown))
+			}
+		}
 	}
+
+	// Set transient config flags before starting
+	serverCfg.AllowCustomScripts = cfg.AllowCustomScripts
 
 	// Start WireGuard interface
 	if err := wg.Start(serverCfg); err != nil {
@@ -206,10 +230,11 @@ func run() error {
 		OIDCProvider: oidcProvider,
 		Monitor:      mon,
 		FrontendFS:   frontendFS,
-		DevMode:        cfg.DevMode,
-		AdminAPIKey:    cfg.AdminAPIKey,
-		OIDCAdminGroup: cfg.OIDCAdminGroup,
-		RequireHTTPS:   cfg.RequireHTTPS,
+		DevMode:            cfg.DevMode,
+		AdminAPIKey:        cfg.AdminAPIKey,
+		OIDCAdminGroup:     cfg.OIDCAdminGroup,
+		RequireHTTPS:       cfg.RequireHTTPS,
+		AllowCustomScripts: cfg.AllowCustomScripts,
 	})
 
 	// Start HTTP server
