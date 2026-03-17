@@ -149,6 +149,8 @@ func (h *ServerHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Warn("audit", "action", "server_config_updated", "actor", username)
+
 	writeJSON(w, http.StatusOK, cfg)
 }
 
@@ -184,6 +186,8 @@ func (h *ServerHandler) HandleApply(w http.ResponseWriter, r *http.Request) {
 			slog.Error("add peer during apply", "error", err, "peer", peers[i].Name)
 		}
 	}
+
+	slog.Warn("audit", "action", "server_config_applied", "actor", actorFromRequest(r))
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "config applied"})
 }

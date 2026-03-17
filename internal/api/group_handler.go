@@ -79,6 +79,8 @@ func (h *GroupHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Warn("audit", "action", "group_created", "actor", actorFromRequest(r), "target_id", group.ID, "target_name", group.Name)
+
 	writeJSON(w, http.StatusCreated, group)
 }
 
@@ -112,6 +114,8 @@ func (h *GroupHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Warn("audit", "action", "group_updated", "actor", actorFromRequest(r), "target_id", group.ID, "target_name", group.Name)
+
 	writeJSON(w, http.StatusOK, group)
 }
 
@@ -133,6 +137,8 @@ func (h *GroupHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to delete group")
 		return
 	}
+
+	slog.Warn("audit", "action", "group_deleted", "actor", actorFromRequest(r), "target_id", id, "target_name", group.Name)
 
 	h.reloadACL(r)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "group deleted"})
@@ -189,6 +195,8 @@ func (h *GroupHandler) HandleSetUserGroups(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to set groups")
 		return
 	}
+
+	slog.Warn("audit", "action", "user_groups_changed", "actor", actorFromRequest(r), "target_id", userID, "group_ids", req.GroupIDs)
 
 	h.reloadACL(r)
 

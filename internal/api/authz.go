@@ -80,3 +80,11 @@ func requirePeerAccess(store database.Store, w http.ResponseWriter, r *http.Requ
 
 	return peer, claims
 }
+
+// actorFromRequest extracts the authenticated user's ID from the request context.
+func actorFromRequest(r *http.Request) string {
+	if c := auth.ClaimsFromContext(r.Context()); c != nil {
+		return c.Subject
+	}
+	return "unknown"
+}
