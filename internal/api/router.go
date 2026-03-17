@@ -113,6 +113,7 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		r.With(RequireRole(domain.RoleEditor)).Put("/api/v1/peers/{id}", peerHandler.HandleUpdate)
 		r.With(RequireRole(domain.RoleEditor)).Delete("/api/v1/peers/{id}", peerHandler.HandleDelete)
 		r.With(RequireRole(domain.RoleEditor)).Patch("/api/v1/peers/{id}/toggle", peerHandler.HandleToggle)
+		r.With(RequireRole(domain.RoleEditor)).Post("/api/v1/peers/{id}/regenerate", peerHandler.HandleRegenerate)
 
 		// Export (ownership enforced in handlers)
 		exportHandler := NewExportHandler(cfg.Store)

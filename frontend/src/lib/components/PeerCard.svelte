@@ -1,14 +1,16 @@
 <script lang="ts">
 	import type { Peer, PeerStats } from '$lib/api';
-	import { api } from '$lib/api';
 	import { togglePeer, deletePeer } from '$lib/stores/peers';
 	import { user } from '$lib/stores/auth';
 	import { formatBytes, formatTimeAgo } from '$lib/format';
-	import { Download, QrCode, Power, Trash2, ArrowUpDown } from 'lucide-svelte';
+	import { Power, RefreshCw, Trash2, ArrowUpDown } from 'lucide-svelte';
 
-	let { peer, stats }: { peer: Peer; stats?: PeerStats } = $props();
+	let {
+		peer,
+		stats,
+		onregenerate
+	}: { peer: Peer; stats?: PeerStats; onregenerate: (peer: Peer) => void } = $props();
 
-	let showQR = $state(false);
 	let deleting = $state(false);
 
 	const connected = $derived(stats?.connected ?? false);
@@ -46,20 +48,12 @@
 			>
 				<Power size={16} class={peer.enabled ? 'text-emerald-500' : ''} />
 			</button>
-			<a
-				href={api.getConfigURL(peer.id)}
-				class="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-				title="Download config"
-				download
-			>
-				<Download size={16} />
-			</a>
 			<button
-				onclick={() => (showQR = !showQR)}
+				onclick={() => onregenerate(peer)}
 				class="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-				title="Show QR code"
+				title="Regenerate config"
 			>
-				<QrCode size={16} />
+				<RefreshCw size={16} />
 			</button>
 			<button
 				onclick={handleDelete}
@@ -92,10 +86,4 @@
 			</div>
 		{/if}
 	</div>
-
-	{#if showQR}
-		<div class="mt-4 flex justify-center rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-800">
-			<img src={api.getQRCodeURL(peer.id)} alt="QR Code for {peer.name}" class="h-48 w-48" />
-		</div>
-	{/if}
 </div>

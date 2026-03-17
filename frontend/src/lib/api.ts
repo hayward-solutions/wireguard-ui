@@ -121,6 +121,10 @@ class APIClient {
 		return this.request<Peer>('PATCH', `/api/v1/peers/${id}/toggle`);
 	}
 
+	async regeneratePeer(id: string, publicKey: string) {
+		return this.request<CreatePeerResponse>('POST', `/api/v1/peers/${id}/regenerate`, { public_key: publicKey });
+	}
+
 	getConfigURL(id: string) {
 		return `/api/v1/peers/${id}/config`;
 	}
