@@ -74,7 +74,7 @@ func (f *netstackForwarder) handleTCP(r *tcp.ForwarderRequest) {
 	// Dial the real destination on the host network.
 	outConn, err := net.DialTimeout("tcp", dstAddr, tcpDialTimeout)
 	if err != nil {
-		slog.Debug("netstack tcp: dial failed", "dst", dstAddr, "error", err)
+		slog.Warn("netstack tcp: dial failed", "dst", dstAddr, "error", err)
 		r.Complete(true) // send RST
 		return
 	}
@@ -83,7 +83,7 @@ func (f *netstackForwarder) handleTCP(r *tcp.ForwarderRequest) {
 	var wq waiter.Queue
 	ep, epErr := r.CreateEndpoint(&wq)
 	if epErr != nil {
-		slog.Debug("netstack tcp: create endpoint failed", "dst", dstAddr, "error", epErr)
+		slog.Warn("netstack tcp: create endpoint failed", "dst", dstAddr, "error", epErr)
 		r.Complete(true)
 		outConn.Close()
 		return
@@ -121,7 +121,7 @@ func (f *netstackForwarder) handleUDP(r *udp.ForwarderRequest) {
 	var wq waiter.Queue
 	ep, epErr := r.CreateEndpoint(&wq)
 	if epErr != nil {
-		slog.Debug("netstack udp: create endpoint failed", "dst", dstAddr, "error", epErr)
+		slog.Warn("netstack udp: create endpoint failed", "dst", dstAddr, "error", epErr)
 		return
 	}
 
@@ -130,14 +130,14 @@ func (f *netstackForwarder) handleUDP(r *udp.ForwarderRequest) {
 	// Dial real destination on the host network.
 	hostAddr, err := net.ResolveUDPAddr("udp", dstAddr)
 	if err != nil {
-		slog.Debug("netstack udp: resolve failed", "dst", dstAddr, "error", err)
+		slog.Warn("netstack udp: resolve failed", "dst", dstAddr, "error", err)
 		inConn.Close()
 		return
 	}
 
 	outConn, err := net.DialUDP("udp", nil, hostAddr)
 	if err != nil {
-		slog.Debug("netstack udp: dial failed", "dst", dstAddr, "error", err)
+		slog.Warn("netstack udp: dial failed", "dst", dstAddr, "error", err)
 		inConn.Close()
 		return
 	}

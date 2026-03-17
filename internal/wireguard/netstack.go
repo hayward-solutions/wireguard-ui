@@ -62,7 +62,7 @@ func (m *NetstackManager) Start(cfg *domain.ServerConfig) error {
 	opts := stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, icmp.NewProtocol6, icmp.NewProtocol4},
-		HandleLocal:        true,
+		HandleLocal:        false, // Must be false: with promiscuous mode, HandleLocal causes gVisor to treat peer source IPs as local addresses and drop all inbound packets.
 	}
 	m.gvStack = stack.New(opts)
 	m.ep = channel.New(1024, uint32(cfg.MTU), "")
@@ -106,13 +106,9 @@ func (m *NetstackManager) Start(cfg *domain.ServerConfig) error {
 		return fmt.Errorf("add address %v: %v", localAddr, tcpipErr)
 	}
 
-	// Add default routes
-	if localAddr.Is4() {
-		m.gvStack.AddRoute(tcpip.Route{Destination: header.IPv4EmptySubnet, NIC: 1})
-	}
-	if localAddr.Is6() {
-		m.gvStack.AddRoute(tcpip.Route{Destination: header.IPv6EmptySubnet, NIC: 1})
-	}
+	// Add default routes — always add both so peers with ::/0 in AllowedIPs work.
+	m.gvStack.AddRoute(tcpip.Route{Destination: header.IPv4EmptySubnet, NIC: 1})
+	m.gvStack.AddRoute(tcpip.Route{Destination: header.IPv6EmptySubnet, NIC: 1})
 
 	// Register TCP/UDP forwarders before creating the WireGuard device.
 	// Pass the local VPN address so traffic to our own IP is rewritten to 127.0.0.1.
