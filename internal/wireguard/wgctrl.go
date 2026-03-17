@@ -21,6 +21,7 @@ type WgctrlManager struct {
 	allowCustomScripts bool
 	firewallConfig     *domain.FirewallConfig
 	serverAddress      string
+	aclEnforcer        *IptablesACLEnforcer
 }
 
 func NewWgctrlManager(interfaceName string) (*WgctrlManager, error) {
@@ -32,6 +33,11 @@ func NewWgctrlManager(interfaceName string) (*WgctrlManager, error) {
 		interfaceName: interfaceName,
 		client:        client,
 	}, nil
+}
+
+// SetACLEnforcer sets the iptables ACL enforcer for this manager.
+func (m *WgctrlManager) SetACLEnforcer(enforcer *IptablesACLEnforcer) {
+	m.aclEnforcer = enforcer
 }
 
 func (m *WgctrlManager) Start(cfg *domain.ServerConfig) error {
@@ -174,6 +180,11 @@ func (m *WgctrlManager) GetStats() ([]domain.PeerStats, error) {
 }
 
 func (m *WgctrlManager) Close() error {
+	// Clean up ACL iptables rules before removing firewall rules.
+	if m.aclEnforcer != nil {
+		m.aclEnforcer.Cleanup()
+	}
+
 	// Run PostDown custom script (if allowed)
 	if m.postDown != "" {
 		if err := RunScriptIfAllowed(m.postDown, "post_down", m.allowCustomScripts); err != nil {

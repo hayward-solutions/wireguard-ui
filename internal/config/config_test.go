@@ -250,6 +250,7 @@ func TestMissingEncryptionKeyRejected(t *testing.T) {
 
 func TestMockModeAllowsEmptySecrets(t *testing.T) {
 	t.Setenv("WG_MOCK_MODE", "true")
+	t.Setenv("LISTEN_ADDR", "127.0.0.1:8080")
 	t.Setenv("JWT_SECRET", "")
 	t.Setenv("ADMIN_PASSWORD", "")
 	t.Setenv("ENCRYPTION_KEY", "")

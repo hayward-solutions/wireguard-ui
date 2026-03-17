@@ -28,7 +28,7 @@ func ApplyFirewallRules(cfg *domain.FirewallConfig, serverAddress, interfaceName
 	}
 
 	if cfg.EnableNAT {
-		if err := iptables("-t", "nat", "-A", "POSTROUTING", "-s", source, "-o", outIface, "-j", "MASQUERADE"); err != nil {
+		if err := iptablesCmd("-t", "nat", "-A", "POSTROUTING", "-s", source, "-o", outIface, "-j", "MASQUERADE"); err != nil {
 			return fmt.Errorf("add NAT masquerade rule: %w", err)
 		}
 	}
@@ -37,14 +37,14 @@ func ApplyFirewallRules(cfg *domain.FirewallConfig, serverAddress, interfaceName
 		// When peer isolation is enabled (default), drop peer-to-peer traffic
 		// (wg→wg) before adding the broader ACCEPT rules.
 		if !cfg.AllowPeerToPeer {
-			if err := iptables("-A", "FORWARD", "-i", interfaceName, "-o", interfaceName, "-j", "DROP"); err != nil {
+			if err := iptablesCmd("-A", "FORWARD", "-i", interfaceName, "-o", interfaceName, "-j", "DROP"); err != nil {
 				return fmt.Errorf("add peer-isolation rule: %w", err)
 			}
 		}
-		if err := iptables("-A", "FORWARD", "-i", interfaceName, "-j", "ACCEPT"); err != nil {
+		if err := iptablesCmd("-A", "FORWARD", "-i", interfaceName, "-j", "ACCEPT"); err != nil {
 			return fmt.Errorf("add forward-in rule: %w", err)
 		}
-		if err := iptables("-A", "FORWARD", "-o", interfaceName, "-j", "ACCEPT"); err != nil {
+		if err := iptablesCmd("-A", "FORWARD", "-o", interfaceName, "-j", "ACCEPT"); err != nil {
 			return fmt.Errorf("add forward-out rule: %w", err)
 		}
 	}
@@ -75,21 +75,21 @@ func RemoveFirewallRules(cfg *domain.FirewallConfig, serverAddress, interfaceNam
 	}
 
 	if cfg.EnableNAT {
-		if err := iptables("-t", "nat", "-D", "POSTROUTING", "-s", source, "-o", outIface, "-j", "MASQUERADE"); err != nil {
+		if err := iptablesCmd("-t", "nat", "-D", "POSTROUTING", "-s", source, "-o", outIface, "-j", "MASQUERADE"); err != nil {
 			slog.Warn("failed to remove NAT masquerade rule", "error", err)
 		}
 	}
 
 	if cfg.EnableForwarding {
 		if !cfg.AllowPeerToPeer {
-			if err := iptables("-D", "FORWARD", "-i", interfaceName, "-o", interfaceName, "-j", "DROP"); err != nil {
+			if err := iptablesCmd("-D", "FORWARD", "-i", interfaceName, "-o", interfaceName, "-j", "DROP"); err != nil {
 				slog.Warn("failed to remove peer-isolation rule", "error", err)
 			}
 		}
-		if err := iptables("-D", "FORWARD", "-i", interfaceName, "-j", "ACCEPT"); err != nil {
+		if err := iptablesCmd("-D", "FORWARD", "-i", interfaceName, "-j", "ACCEPT"); err != nil {
 			slog.Warn("failed to remove forward-in rule", "error", err)
 		}
-		if err := iptables("-D", "FORWARD", "-o", interfaceName, "-j", "ACCEPT"); err != nil {
+		if err := iptablesCmd("-D", "FORWARD", "-o", interfaceName, "-j", "ACCEPT"); err != nil {
 			slog.Warn("failed to remove forward-out rule", "error", err)
 		}
 	}
@@ -102,8 +102,9 @@ func RemoveFirewallRules(cfg *domain.FirewallConfig, serverAddress, interfaceNam
 	return nil
 }
 
-// iptables calls the iptables binary directly with individual arguments (no shell).
-func iptables(args ...string) error {
+// iptablesCmd calls the iptables binary directly with individual arguments (no shell).
+// It is a variable to allow injection in tests.
+var iptablesCmd = func(args ...string) error {
 	slog.Debug("executing iptables", "args", args)
 	out, err := exec.Command("iptables", args...).CombinedOutput()
 	if err != nil {
