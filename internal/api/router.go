@@ -30,6 +30,7 @@ type RouterConfig struct {
 	OIDCAdminGroup     string
 	RequireHTTPS       bool
 	AllowCustomScripts bool
+	CORSOrigins        []string
 }
 
 func NewRouter(cfg RouterConfig) *chi.Mux {
@@ -45,11 +46,14 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	// Only allow credentialed cross-origin requests for explicitly listed origins.
+	// Wildcard ("*") disables credentials to prevent ambient-authority attacks.
+	allowCreds := len(cfg.CORSOrigins) > 0 && cfg.CORSOrigins[0] != "*"
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowedOrigins:   cfg.CORSOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-API-Key"},
-		AllowCredentials: true,
+		AllowCredentials: allowCreds,
 		MaxAge:           300,
 	}))
 
