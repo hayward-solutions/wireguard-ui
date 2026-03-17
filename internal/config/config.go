@@ -26,8 +26,9 @@ type Config struct {
 	OIDCAdminGroup   string
 
 	// JWT
-	JWTSecret string
-	JWTExpiry time.Duration
+	JWTSecret     string
+	JWTExpiry     time.Duration
+	SessionExpiry time.Duration
 
 	// WireGuard
 	WGInterfaceName      string
@@ -117,10 +118,16 @@ func Load() (*Config, error) {
 		}
 	}
 
-	expiryStr := envOrDefault("JWT_EXPIRY", "24h")
+	expiryStr := envOrDefault("JWT_EXPIRY", "15m")
 	cfg.JWTExpiry, err = time.ParseDuration(expiryStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid JWT_EXPIRY: %w", err)
+	}
+
+	sessionExpiryStr := envOrDefault("SESSION_EXPIRY", "168h")
+	cfg.SessionExpiry, err = time.ParseDuration(sessionExpiryStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid SESSION_EXPIRY: %w", err)
 	}
 
 	intervalStr := envOrDefault("STATS_INTERVAL", "10s")

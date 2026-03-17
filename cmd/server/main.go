@@ -200,6 +200,30 @@ func run() error {
 	mon.Start()
 	defer mon.Stop()
 
+	// Initialize rate limiters
+	authRateLimiter := auth.NewRateLimiter(5, 10)    // 5/s burst 10 for auth endpoints
+	loginRateLimiter := auth.NewRateLimiter(1, 5)     // 1/s burst 5 per-username
+	passwordRateLimiter := auth.NewRateLimiter(3, 5)   // 3/s burst 5 for password endpoints
+	defer authRateLimiter.Stop()
+	defer loginRateLimiter.Stop()
+	defer passwordRateLimiter.Stop()
+
+	// Start session cleanup goroutine
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := store.CleanExpiredSessions(context.Background()); err != nil {
+					slog.Error("failed to clean expired sessions", "error", err)
+				}
+			}
+		}
+	}()
+
 	// Initialize JWT manager
 	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiry)
 
@@ -224,18 +248,22 @@ func run() error {
 	// Build router
 	frontendFS := frontend.FS()
 	router := api.NewRouter(api.RouterConfig{
-		Store:        store,
-		WG:           wg,
-		JWTManager:   jwtMgr,
-		OIDCProvider: oidcProvider,
-		Monitor:      mon,
-		FrontendFS:   frontendFS,
-		DevMode:            cfg.DevMode,
-		AdminAPIKey:        cfg.AdminAPIKey,
-		OIDCAdminGroup:     cfg.OIDCAdminGroup,
-		RequireHTTPS:       cfg.RequireHTTPS,
-		AllowCustomScripts: cfg.AllowCustomScripts,
-		CORSOrigins:        cfg.CORSOrigins,
+		Store:               store,
+		WG:                  wg,
+		JWTManager:          jwtMgr,
+		OIDCProvider:        oidcProvider,
+		Monitor:             mon,
+		FrontendFS:          frontendFS,
+		AuthRateLimiter:     authRateLimiter,
+		LoginRateLimiter:    loginRateLimiter,
+		PasswordRateLimiter: passwordRateLimiter,
+		SessionExpiry:       cfg.SessionExpiry,
+		DevMode:             cfg.DevMode,
+		AdminAPIKey:         cfg.AdminAPIKey,
+		OIDCAdminGroup:      cfg.OIDCAdminGroup,
+		RequireHTTPS:        cfg.RequireHTTPS,
+		AllowCustomScripts:  cfg.AllowCustomScripts,
+		CORSOrigins:         cfg.CORSOrigins,
 	})
 
 	// Start HTTP server
