@@ -15,9 +15,12 @@ import (
 
 // WgctrlManager manages a kernel WireGuard interface via wgctrl and ip commands.
 type WgctrlManager struct {
-	interfaceName string
-	client        *wgctrl.Client
-	postDown      string
+	interfaceName      string
+	client             *wgctrl.Client
+	postDown           string
+	allowCustomScripts bool
+	firewallConfig     *domain.FirewallConfig
+	serverAddress      string
 }
 
 func NewWgctrlManager(interfaceName string) (*WgctrlManager, error) {
@@ -33,6 +36,9 @@ func NewWgctrlManager(interfaceName string) (*WgctrlManager, error) {
 
 func (m *WgctrlManager) Start(cfg *domain.ServerConfig) error {
 	m.postDown = cfg.PostDown
+	m.allowCustomScripts = cfg.AllowCustomScripts
+	m.firewallConfig = cfg.FirewallConfig
+	m.serverAddress = cfg.Address
 
 	// Create interface if it doesn't exist
 	if err := m.ensureInterface(); err != nil {
@@ -65,9 +71,14 @@ func (m *WgctrlManager) Start(cfg *domain.ServerConfig) error {
 		return fmt.Errorf("link up: %w", err)
 	}
 
-	// Run PostUp script
+	// Apply structured firewall rules (no shell execution)
+	if err := ApplyFirewallRules(cfg.FirewallConfig, cfg.Address, m.interfaceName); err != nil {
+		slog.Warn("failed to apply firewall rules", "error", err)
+	}
+
+	// Run PostUp custom script (if allowed)
 	if cfg.PostUp != "" {
-		if err := runScript(cfg.PostUp); err != nil {
+		if err := RunScriptIfAllowed(cfg.PostUp, "post_up", cfg.AllowCustomScripts); err != nil {
 			slog.Warn("post-up script failed", "error", err)
 		}
 	}
@@ -163,10 +174,16 @@ func (m *WgctrlManager) GetStats() ([]domain.PeerStats, error) {
 }
 
 func (m *WgctrlManager) Close() error {
+	// Run PostDown custom script (if allowed)
 	if m.postDown != "" {
-		if err := runScript(m.postDown); err != nil {
+		if err := RunScriptIfAllowed(m.postDown, "post_down", m.allowCustomScripts); err != nil {
 			slog.Warn("post-down script failed", "error", err)
 		}
+	}
+
+	// Remove structured firewall rules
+	if err := RemoveFirewallRules(m.firewallConfig, m.serverAddress, m.interfaceName); err != nil {
+		slog.Warn("failed to remove firewall rules", "error", err)
 	}
 
 	// Delete the interface
@@ -231,16 +248,6 @@ func parseAllowedIPs(cidrList string) []net.IPNet {
 		nets = append(nets, *ipNet)
 	}
 	return nets
-}
-
-// runScript executes a shell script string.
-func runScript(script string) error {
-	cmd := exec.Command("sh", "-c", script)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s: %w", strings.TrimSpace(string(out)), err)
-	}
-	return nil
 }
 
 var _ Manager = (*WgctrlManager)(nil)

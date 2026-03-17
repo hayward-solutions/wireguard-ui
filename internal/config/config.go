@@ -52,7 +52,8 @@ type Config struct {
 	StatsInterval time.Duration
 
 	// Security
-	RequireHTTPS bool
+	RequireHTTPS       bool
+	AllowCustomScripts bool
 
 	// Development
 	DevMode bool
@@ -101,6 +102,7 @@ func Load() (*Config, error) {
 	}
 
 	cfg.RequireHTTPS = envOrDefault("REQUIRE_HTTPS", "false") == "true"
+	cfg.AllowCustomScripts = envOrDefault("ALLOW_CUSTOM_SCRIPTS", "false") == "true"
 	cfg.WGUserspaceMode = envOrDefault("WG_USERSPACE_MODE", "true") == "true"
 	cfg.WGNetstackMode = envOrDefault("WG_NETSTACK_MODE", "false") == "true"
 	cfg.WGMockMode = envOrDefault("WG_MOCK_MODE", "false") == "true"
