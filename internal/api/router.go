@@ -61,9 +61,7 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 	// Authenticated API routes
 	r.Group(func(r chi.Router) {
 		// API key middleware runs first — sets claims if valid key provided
-		if cfg.AdminAPIKey != "" {
-			r.Use(auth.APIKeyMiddleware(cfg.AdminAPIKey))
-		}
+		r.Use(auth.APIKeyMiddleware(cfg.AdminAPIKey, cfg.Store))
 		r.Use(auth.Middleware(cfg.JWTManager))
 
 		r.Get("/auth/me", authHandler.HandleMe)
@@ -93,9 +91,14 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		r.Get("/api/v1/stats", statsHandler.HandleGet)
 		r.Get("/api/v1/stats/stream", statsHandler.HandleStream)
 
-		// Users (admin only, except password change)
+		// Self-service: password change and API tokens
 		userHandler := NewUserHandler(cfg.Store)
 		r.Post("/api/v1/me/password", userHandler.HandleChangePassword)
+
+		tokenHandler := NewTokenHandler(cfg.Store)
+		r.Get("/api/v1/me/tokens", tokenHandler.HandleList)
+		r.Post("/api/v1/me/tokens", tokenHandler.HandleCreate)
+		r.Delete("/api/v1/me/tokens/{id}", tokenHandler.HandleDelete)
 		r.Route("/api/v1/users", func(r chi.Router) {
 			r.Use(RequireAdmin)
 			r.Get("/", userHandler.HandleList)
