@@ -40,6 +40,22 @@ func NewPostgresStore(dsn string, encryptor *crypto.Encryptor) (*PostgresStore, 
 	return &PostgresStore{db: db, encryptor: encryptor}, nil
 }
 
+// HasEncryptedData returns true if any encrypted values (prefixed with "enc:") exist in the database.
+func (s *PostgresStore) HasEncryptedData(ctx context.Context) (bool, error) {
+	var exists bool
+	err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM server_config WHERE private_key LIKE 'enc:%'
+			UNION ALL
+			SELECT 1 FROM peers WHERE private_key LIKE 'enc:%' OR preshared_key LIKE 'enc:%'
+			LIMIT 1
+		)`).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check encrypted data: %w", err)
+	}
+	return exists, nil
+}
+
 func (s *PostgresStore) Migrate(ctx context.Context) error {
 	// Bootstrap schema_migrations table
 	_, err := s.db.ExecContext(ctx, `

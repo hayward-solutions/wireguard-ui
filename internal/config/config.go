@@ -140,10 +140,6 @@ func Load() (*Config, error) {
 		cfg.OIDCRedirectURL = cfg.BaseURL + "/auth/callback"
 	}
 
-	if cfg.EncryptionKey == "" {
-		cfg.EncryptionKey = cfg.JWTSecret
-	}
-
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
@@ -152,6 +148,11 @@ func Load() (*Config, error) {
 }
 
 func (c *Config) validate() error {
+	// Enforce key separation in all modes.
+	if c.EncryptionKey != "" && c.EncryptionKey == c.JWTSecret {
+		return fmt.Errorf("ENCRYPTION_KEY must be different from JWT_SECRET")
+	}
+
 	if c.WGMockMode {
 		if c.JWTSecret == "" {
 			c.JWTSecret = "dev-secret-change-me"

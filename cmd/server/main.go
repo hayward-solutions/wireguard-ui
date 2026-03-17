@@ -70,6 +70,17 @@ func run() error {
 	}
 	slog.Info("database migrated", "driver", cfg.DatabaseDriver)
 
+	// Refuse to start if database has encrypted data but no encryption key is configured.
+	if encryptor == nil {
+		hasEnc, err := store.HasEncryptedData(ctx)
+		if err != nil {
+			return fmt.Errorf("check encrypted data: %w", err)
+		}
+		if hasEnc {
+			return fmt.Errorf("database contains encrypted data but ENCRYPTION_KEY is not set; set ENCRYPTION_KEY to decrypt existing data")
+		}
+	}
+
 	// Seed default admin user if no users exist
 	if cfg.AdminPassword != "" {
 		if err := api.EnsureDefaultAdmin(ctx, store, cfg.AdminUsername, cfg.AdminPassword); err != nil {
