@@ -311,7 +311,7 @@ func run() error {
 		Addr:         cfg.ListenAddr,
 		Handler:      router,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 0, // Disabled for SSE
+		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 

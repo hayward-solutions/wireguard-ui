@@ -35,6 +35,12 @@ func (h *StatsHandler) HandleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Disable the global WriteTimeout for this long-lived SSE connection.
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+		slog.Error("failed to clear write deadline for SSE", "error", err)
+	}
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")

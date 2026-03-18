@@ -57,7 +57,7 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.CORSOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-API-Key"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-API-Key", "X-CSRF-Token"},
 		AllowCredentials: allowCreds,
 		MaxAge:           300,
 	}))
@@ -87,8 +87,8 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		r.Get("/auth/login", authHandler.HandleLoginPage)
 		r.Post("/auth/login", authHandler.HandleLocalLogin)
 		r.Get("/auth/callback", authHandler.HandleCallback)
-		r.Post("/auth/logout", authHandler.HandleLogout)
-		r.Post("/auth/refresh", authHandler.HandleRefresh)
+		r.With(CSRFMiddleware).Post("/auth/logout", authHandler.HandleLogout)
+		r.With(CSRFMiddleware).Post("/auth/refresh", authHandler.HandleRefresh)
 	})
 
 	// Authenticated API routes
@@ -96,6 +96,7 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		// API key middleware runs first — sets claims if valid key provided
 		r.Use(auth.APIKeyMiddleware(cfg.AdminAPIKey, cfg.Store))
 		r.Use(auth.Middleware(cfg.JWTManager))
+		r.Use(CSRFMiddleware)
 
 		r.Get("/auth/me", authHandler.HandleMe)
 
