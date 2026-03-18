@@ -31,11 +31,19 @@ type NetstackManager struct {
 	ep         *channel.Endpoint
 	forwarder  *netstackForwarder
 	acl        *acl.PolicyEngine
-	forwardAll bool // tunnel mode: rewrite all destinations to 127.0.0.1
+	forwardAll bool             // tunnel mode: rewrite all destinations to 127.0.0.1
+	bindHub    *sharedBindHub   // shared UDP socket hub for tunnel multiplexing (main device only)
+	sharedBind conn.Bind        // if set, use this bind instead of creating a new UDP socket (tunnel mode)
 }
 
 func NewNetstackManager() *NetstackManager {
 	return &NetstackManager{}
+}
+
+// SetSharedBind provides a conn.Bind to use instead of creating a new UDP socket.
+// Must be called before Start. Used by tunnel devices to share the main device's port.
+func (m *NetstackManager) SetSharedBind(b conn.Bind) {
+	m.sharedBind = b
 }
 
 // SetPolicyEngine sets the ACL policy engine used to filter forwarded connections.
@@ -144,9 +152,22 @@ func (m *NetstackManager) Start(cfg *domain.ServerConfig) error {
 	tunDev.notifyHandle = m.ep.AddNotify(tunDev)
 	tunDev.events <- tun.EventUp
 
-	// Create wireguard-go device
+	// Create wireguard-go device.
+	// If a shared bind was provided (tunnel mode), use it instead of a new socket.
+	// Otherwise create a fan-out bind so tunnel devices can later share this port.
+	var devBind conn.Bind
+	if m.sharedBind != nil {
+		devBind = m.sharedBind
+	} else {
+		innerBind := conn.NewDefaultBind()
+		foBind := &fanOutBind{inner: innerBind}
+		hub := newSharedBindHub(foBind)
+		foBind.hub = hub
+		m.bindHub = hub
+		devBind = foBind
+	}
 	logger := device.NewLogger(device.LogLevelSilent, "(netstack) ")
-	m.dev = device.NewDevice(tunDev, conn.NewDefaultBind(), logger)
+	m.dev = device.NewDevice(tunDev, devBind, logger)
 
 	// Configure via IPC
 	ipcConf, err := buildIpcConfig(cfg)
@@ -222,6 +243,15 @@ func (m *NetstackManager) Close() error {
 		m.dev.Close()
 	}
 	return nil
+}
+
+// NewSharedBind creates a conn.Bind for a tunnel device that shares this manager's
+// UDP socket. Returns nil if the manager hasn't been started yet.
+func (m *NetstackManager) NewSharedBind() conn.Bind {
+	if m.bindHub == nil {
+		return nil
+	}
+	return m.bindHub.newClient()
 }
 
 // RegisterTunnelDialer registers a tunnel dialer with the forwarder.

@@ -220,6 +220,13 @@ func (tm *TunnelManager) createManager(t *domain.Tunnel) (Manager, string, error
 	case TunnelModeNetstack:
 		nm := NewNetstackManager()
 		nm.SetForwardAll(true) // tunnel interfaces forward all traffic to localhost
+		// Share the main device's UDP socket so tunnels work in environments
+		// like Fargate where only one UDP port is exposed.
+		if tm.mainNetstack != nil {
+			if sharedBind := tm.mainNetstack.NewSharedBind(); sharedBind != nil {
+				nm.SetSharedBind(sharedBind)
+			}
+		}
 		return nm, "", nil
 	case TunnelModeUserspace:
 		ifName := tunnelInterfaceName(t.ID)
