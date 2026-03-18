@@ -12,9 +12,7 @@
 	let showCreate = $state(false);
 	let regeneratePeer = $state<Peer | null>(null);
 	let search = $state('');
-	let view = $state<'table' | 'cards'>(
-		(typeof localStorage !== 'undefined' && localStorage.getItem('peers-view') as 'table' | 'cards') || 'table'
-	);
+	let view = $state<'table' | 'cards'>('table');
 
 	function setView(v: 'table' | 'cards') {
 		view = v;
@@ -35,19 +33,25 @@
 	);
 
 	onMount(() => {
+		const stored = localStorage.getItem('peers-view') as 'table' | 'cards' | null;
+		if (stored) {
+			view = stored;
+		} else if (window.innerWidth < 1024) {
+			view = 'cards';
+		}
 		loadPeers();
 	});
 </script>
 
 <div>
-	<div class="flex items-center justify-between">
+	<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 		<div>
 			<h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Peers</h1>
 			<p class="mt-1 text-zinc-500 dark:text-zinc-400">{$peers.length} peer{$peers.length !== 1 ? 's' : ''} configured</p>
 		</div>
 		<button
 			onclick={() => (showCreate = true)}
-			class="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+			class="inline-flex items-center gap-2 self-start rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 sm:self-auto dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
 		>
 			<Plus size={16} />
 			Add Peer

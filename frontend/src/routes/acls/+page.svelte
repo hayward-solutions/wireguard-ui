@@ -149,14 +149,14 @@
 </script>
 
 <div>
-	<div class="flex items-center justify-between">
+	<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 		<div>
 			<h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">ACL Rules</h1>
 			<p class="mt-1 text-zinc-500 dark:text-zinc-400">{rules.length} rule{rules.length !== 1 ? 's' : ''} &middot; Default deny for non-admin peers</p>
 		</div>
 		<button
 			onclick={openCreate}
-			class="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+			class="inline-flex items-center gap-2 self-start rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 sm:self-auto dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
 		>
 			<Plus size={16} />
 			Add Rule
@@ -171,14 +171,15 @@
 		<div class="mt-8 text-center text-zinc-400 dark:text-zinc-500">Loading...</div>
 	{:else}
 		<div class="mt-6 overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+			<div class="overflow-x-auto">
 			<table class="w-full text-left text-sm">
 				<thead class="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800">
 					<tr>
 						<th class="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">Pri</th>
 						<th class="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">Name</th>
 						<th class="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">Destination</th>
-						<th class="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">Proto</th>
-						<th class="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">Ports</th>
+						<th class="hidden px-4 py-3 font-medium text-zinc-600 md:table-cell dark:text-zinc-400">Proto</th>
+						<th class="hidden px-4 py-3 font-medium text-zinc-600 md:table-cell dark:text-zinc-400">Ports</th>
 						<th class="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">Target</th>
 						<th class="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-400">Actions</th>
 					</tr>
@@ -194,13 +195,13 @@
 								{/if}
 							</td>
 							<td class="px-4 py-3 font-mono text-xs text-zinc-700 dark:text-zinc-300">{r.dst_cidr}</td>
-							<td class="px-4 py-3">
+							<td class="hidden px-4 py-3 md:table-cell">
 								<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
 									{r.protocol === 'tcp' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' : r.protocol === 'udp' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'}">
 									{r.protocol}
 								</span>
 							</td>
-							<td class="px-4 py-3 font-mono text-xs text-zinc-500 dark:text-zinc-400">{r.dst_ports || '*'}</td>
+							<td class="hidden px-4 py-3 font-mono text-xs text-zinc-500 md:table-cell dark:text-zinc-400">{r.dst_ports || '*'}</td>
 							<td class="px-4 py-3 text-xs text-zinc-600 dark:text-zinc-400">{getTargetLabel(r)}</td>
 							<td class="px-4 py-3">
 								<div class="flex items-center justify-end gap-1">
@@ -227,6 +228,7 @@
 					{/each}
 				</tbody>
 			</table>
+			</div>
 		</div>
 
 		<!-- Effective Rules Preview -->
