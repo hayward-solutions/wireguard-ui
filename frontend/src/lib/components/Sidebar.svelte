@@ -3,6 +3,7 @@
 	import { LayoutDashboard, Users, Server, ShieldCheck, CircleUser, LogOut, Sun, Moon, Monitor, UsersRound, Shield, Cable } from 'lucide-svelte';
 	import { logout, user } from '$lib/stores/auth';
 	import { theme, cycleTheme } from '$lib/stores/theme';
+	import { closeSidebar } from '$lib/stores/sidebar';
 	import { get } from 'svelte/store';
 
 	const baseLinks = [
@@ -47,6 +48,7 @@
 			{@const active = page.url.pathname === link.href || (link.href !== '/' && page.url.pathname.startsWith(link.href))}
 			<a
 				href={link.href}
+				onclick={() => closeSidebar()}
 				class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors
 					{active ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100' : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100'}"
 			>

@@ -29,6 +29,7 @@
 </script>
 
 <div class="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+	<div class="overflow-x-auto">
 	<table class="w-full text-left text-sm">
 		<thead>
 			<tr class="border-b border-zinc-100 bg-zinc-50 text-xs font-medium uppercase tracking-wider text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-400">
@@ -38,8 +39,8 @@
 					<th class="px-4 py-3">Owner</th>
 				{/if}
 				<th class="px-4 py-3">Address</th>
-				<th class="px-4 py-3">Last Handshake</th>
-				<th class="px-4 py-3">Transfer</th>
+				<th class="hidden px-4 py-3 md:table-cell">Last Handshake</th>
+				<th class="hidden px-4 py-3 md:table-cell">Transfer</th>
 				<th class="px-4 py-3 text-right">Actions</th>
 			</tr>
 		</thead>
@@ -63,10 +64,10 @@
 						<td class="px-4 py-3 text-zinc-500 dark:text-zinc-400">{peer.created_by_name ?? '—'}</td>
 					{/if}
 					<td class="px-4 py-3 font-mono text-zinc-600 dark:text-zinc-400">{peer.address}</td>
-					<td class="px-4 py-3 text-zinc-500 dark:text-zinc-400">
+					<td class="hidden px-4 py-3 text-zinc-500 md:table-cell dark:text-zinc-400">
 						{stats ? formatTimeAgo(stats.last_handshake) : '—'}
 					</td>
-					<td class="px-4 py-3 text-zinc-500 dark:text-zinc-400">
+					<td class="hidden px-4 py-3 text-zinc-500 md:table-cell dark:text-zinc-400">
 						{#if stats}
 							<span class="text-zinc-400 dark:text-zinc-500">↓</span> {formatBytes(stats.transfer_rx)}
 							<span class="mx-1 text-zinc-300 dark:text-zinc-600">/</span>
@@ -79,14 +80,14 @@
 						<div class="flex items-center justify-end gap-1">
 							<button
 								onclick={() => togglePeer(peer.id)}
-								class="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
+								class="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
 								title={peer.enabled ? 'Disable' : 'Enable'}
 							>
 								<Power size={15} class={peer.enabled ? 'text-emerald-500' : ''} />
 							</button>
 							<button
 								onclick={() => onregenerate(peer)}
-								class="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
+								class="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
 								title="Regenerate config"
 							>
 								<RefreshCw size={15} />
@@ -94,7 +95,7 @@
 							<button
 								onclick={() => handleDelete(peer)}
 								disabled={deleting === peer.id}
-								class="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-zinc-500 dark:hover:bg-red-950 dark:hover:text-red-400"
+								class="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-zinc-500 dark:hover:bg-red-950 dark:hover:text-red-400"
 								title="Delete peer"
 							>
 								<Trash2 size={15} />
@@ -111,4 +112,5 @@
 			{/each}
 		</tbody>
 	</table>
+	</div>
 </div>

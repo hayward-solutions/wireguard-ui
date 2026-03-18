@@ -212,7 +212,7 @@
 					<p class="text-sm text-emerald-600">{success}</p>
 				{/if}
 
-				<div class="flex justify-end gap-3">
+				<div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
 					<button
 						type="button"
 						onclick={handleApply}

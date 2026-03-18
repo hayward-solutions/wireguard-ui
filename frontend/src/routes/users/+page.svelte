@@ -146,14 +146,14 @@
 </script>
 
 <div>
-	<div class="flex items-center justify-between">
+	<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 		<div>
 			<h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Users</h1>
 			<p class="mt-1 text-zinc-500 dark:text-zinc-400">{users.length} user{users.length !== 1 ? 's' : ''}</p>
 		</div>
 		<button
 			onclick={() => (showCreate = true)}
-			class="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+			class="inline-flex items-center gap-2 self-start rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 sm:self-auto dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
 		>
 			<Plus size={16} />
 			Add User
@@ -168,13 +168,14 @@
 		<div class="mt-8 text-center text-zinc-400 dark:text-zinc-500">Loading...</div>
 	{:else}
 		<div class="mt-6 overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+			<div class="overflow-x-auto">
 			<table class="w-full text-left text-sm">
 				<thead class="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800">
 					<tr>
 						<th class="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">Username</th>
 						<th class="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">Name</th>
 						<th class="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">Role</th>
-						<th class="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">Created</th>
+						<th class="hidden px-4 py-3 font-medium text-zinc-600 md:table-cell dark:text-zinc-400">Created</th>
 						<th class="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-400">Actions</th>
 					</tr>
 				</thead>
@@ -189,7 +190,7 @@
 									{u.role}
 								</span>
 							</td>
-							<td class="px-4 py-3 text-zinc-500 dark:text-zinc-400">{new Date(u.created_at).toLocaleDateString()}</td>
+							<td class="hidden px-4 py-3 text-zinc-500 md:table-cell dark:text-zinc-400">{new Date(u.created_at).toLocaleDateString()}</td>
 							<td class="px-4 py-3">
 								<div class="flex items-center justify-end gap-1">
 									<button onclick={() => openGroups(u)} title="Manage groups" class="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300">
@@ -216,6 +217,7 @@
 					{/each}
 				</tbody>
 			</table>
+			</div>
 		</div>
 	{/if}
 </div>

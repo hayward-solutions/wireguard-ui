@@ -188,13 +188,13 @@
 
 	<!-- API Tokens -->
 	<div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
-		<div class="flex items-center justify-between">
+		<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 			<div>
 				<h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">API Tokens</h2>
 				<p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Create tokens for programmatic API access</p>
 			</div>
 			<button onclick={() => { showCreateToken = true; tokenName = ''; createTokenError = ''; }}
-				class="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">
+				class="inline-flex items-center gap-2 self-start rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 sm:self-auto dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">
 				<Plus size={16} />
 				Create Token
 			</button>
@@ -208,6 +208,7 @@
 			<div class="mt-6 text-center text-zinc-400 dark:text-zinc-500">Loading...</div>
 		{:else}
 			<div class="mt-4 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700">
+				<div class="overflow-x-auto">
 				<table class="w-full text-left text-sm">
 					<thead class="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800">
 						<tr>
@@ -240,6 +241,7 @@
 						{/each}
 					</tbody>
 				</table>
+				</div>
 			</div>
 		{/if}
 	</div>
