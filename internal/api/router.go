@@ -19,6 +19,7 @@ import (
 type RouterConfig struct {
 	Store        database.Store
 	WG           wireguard.Manager
+	TunnelManager *wireguard.TunnelManager
 	JWTManager   *auth.JWTManager
 	OIDCProvider *auth.OIDCProvider
 	Monitor      *monitor.Monitor
@@ -29,7 +30,8 @@ type RouterConfig struct {
 	PasswordRateLimiter *auth.RateLimiter
 	SessionExpiry      time.Duration
 	DevMode            bool
-	AdminAPIKey        string
+	AdminAPIKey         string
+	APITokenMaxLifetime time.Duration
 	OIDCAdminGroup     string
 	RequireHTTPS       bool
 	AllowCustomScripts bool
@@ -112,6 +114,7 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		r.With(RequireRole(domain.RoleEditor)).Put("/api/v1/peers/{id}", peerHandler.HandleUpdate)
 		r.With(RequireRole(domain.RoleEditor)).Delete("/api/v1/peers/{id}", peerHandler.HandleDelete)
 		r.With(RequireRole(domain.RoleEditor)).Patch("/api/v1/peers/{id}/toggle", peerHandler.HandleToggle)
+		r.With(RequireRole(domain.RoleEditor)).Post("/api/v1/peers/{id}/regenerate", peerHandler.HandleRegenerate)
 
 		// Export (ownership enforced in handlers)
 		exportHandler := NewExportHandler(cfg.Store)
@@ -131,7 +134,7 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 			r.Post("/api/v1/me/password", userHandler.HandleChangePassword)
 		}
 
-		tokenHandler := NewTokenHandler(cfg.Store)
+		tokenHandler := NewTokenHandler(cfg.Store, cfg.APITokenMaxLifetime)
 		r.Get("/api/v1/me/tokens", tokenHandler.HandleList)
 		r.Post("/api/v1/me/tokens", tokenHandler.HandleCreate)
 		r.Delete("/api/v1/me/tokens/{id}", tokenHandler.HandleDelete)
@@ -159,6 +162,20 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 			r.Get("/{id}", aclHandler.HandleGet)
 			r.Put("/{id}", aclHandler.HandleUpdate)
 			r.Delete("/{id}", aclHandler.HandleDelete)
+		})
+
+		// Tunnels (admin only)
+		tunnelHandler := NewTunnelHandler(cfg.Store, cfg.TunnelManager)
+		r.Route("/api/v1/tunnels", func(r chi.Router) {
+			r.Use(RequireAdmin)
+			r.Get("/", tunnelHandler.HandleList)
+			r.Post("/", tunnelHandler.HandleCreate)
+			r.Get("/{id}", tunnelHandler.HandleGet)
+			r.Put("/{id}", tunnelHandler.HandleUpdate)
+			r.Delete("/{id}", tunnelHandler.HandleDelete)
+			r.Patch("/{id}/toggle", tunnelHandler.HandleToggle)
+			r.Get("/{id}/config", tunnelHandler.HandleRemoteConfig)
+			r.Get("/{id}/status", tunnelHandler.HandleStatus)
 		})
 
 		// User management (admin only)

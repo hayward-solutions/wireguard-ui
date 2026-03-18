@@ -46,8 +46,11 @@ func APIKeyMiddleware(apiKey string, store database.Store) func(http.Handler) ht
 // tryAPIToken attempts to authenticate with the given token.
 // Returns true if authentication was handled (request served), false to continue.
 func tryAPIToken(r *http.Request, next http.Handler, w http.ResponseWriter, token, staticKey string, store database.Store) bool {
-	// Check static admin API key first
+	// Check static admin API key (deprecated — prefer per-user tokens)
 	if staticKey != "" && subtle.ConstantTimeCompare([]byte(token), []byte(staticKey)) == 1 {
+		slog.Warn("static ADMIN_API_KEY used for authentication; this is deprecated — create per-user API tokens instead",
+			"remote_addr", r.RemoteAddr,
+			"path", r.URL.Path)
 		claims := &Claims{
 			Email: "api@local",
 			Name:  "API",
@@ -55,6 +58,8 @@ func tryAPIToken(r *http.Request, next http.Handler, w http.ResponseWriter, toke
 		}
 		claims.Subject = "api-key"
 		ctx := SetClaims(r.Context(), claims)
+		w.Header().Set("Deprecation", "true")
+		w.Header().Set("Sunset", "2026-09-01")
 		next.ServeHTTP(w, r.WithContext(ctx))
 		return true
 	}

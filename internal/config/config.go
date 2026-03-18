@@ -56,8 +56,14 @@ type Config struct {
 	// Encryption
 	EncryptionKey string
 
+	// Tunnels
+	TunnelPeers string // JSON array from TUNNEL_PEERS env var for first-boot
+
 	// Monitoring
 	StatsInterval time.Duration
+
+	// API Tokens
+	APITokenMaxLifetime time.Duration
 
 	// Security
 	RequireHTTPS       bool
@@ -93,6 +99,7 @@ func Load() (*Config, error) {
 		WGDNS:           envOrDefault("WG_DNS", "1.1.1.1,8.8.8.8"),
 		WGDefaultAllowedIPs: envOrDefault("WG_DEFAULT_ALLOWED_IPS", "0.0.0.0/0, ::/0"),
 		AdminUsername:        envOrDefault("ADMIN_USERNAME", "admin"),
+		TunnelPeers:     os.Getenv("TUNNEL_PEERS"),
 		AdminPassword:   os.Getenv("ADMIN_PASSWORD"),
 		AdminAPIKey:     os.Getenv("ADMIN_API_KEY"),
 		EncryptionKey:   os.Getenv("ENCRYPTION_KEY"),
@@ -151,8 +158,21 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid STATS_INTERVAL: %w", err)
 	}
 
+	tokenLifetimeStr := envOrDefault("API_TOKEN_MAX_LIFETIME", "2160h") // 90 days
+	cfg.APITokenMaxLifetime, err = time.ParseDuration(tokenLifetimeStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid API_TOKEN_MAX_LIFETIME: %w", err)
+	}
+	if cfg.APITokenMaxLifetime <= 0 {
+		return nil, fmt.Errorf("API_TOKEN_MAX_LIFETIME must be positive")
+	}
+
 	if cfg.OIDCRedirectURL == "" {
 		cfg.OIDCRedirectURL = cfg.BaseURL + "/auth/callback"
+	}
+
+	if cfg.AdminAPIKey != "" {
+		slog.Warn("ADMIN_API_KEY is deprecated and will be removed in a future release; create per-user API tokens instead")
 	}
 
 	if err := cfg.validate(); err != nil {

@@ -31,3 +31,9 @@ export async function togglePeer(id: string) {
 	const updated = await api.togglePeer(id);
 	peers.update((p) => p.map((peer) => (peer.id === updated.id ? updated : peer)));
 }
+
+export async function regeneratePeer(id: string, publicKey: string): Promise<CreatePeerResponse> {
+	const response = await api.regeneratePeer(id, publicKey);
+	peers.update((p) => p.map((peer) => (peer.id === response.id ? response : peer)));
+	return response;
+}

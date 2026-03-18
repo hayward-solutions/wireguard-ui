@@ -26,11 +26,12 @@ import (
 // NetstackManager manages a WireGuard interface using a fully userspace gVisor network stack.
 // This requires no NET_ADMIN capabilities or /dev/net/tun, making it suitable for AWS Fargate.
 type NetstackManager struct {
-	dev       *device.Device
-	gvStack   *stack.Stack
-	ep        *channel.Endpoint
-	forwarder *netstackForwarder
-	acl       *acl.PolicyEngine
+	dev        *device.Device
+	gvStack    *stack.Stack
+	ep         *channel.Endpoint
+	forwarder  *netstackForwarder
+	acl        *acl.PolicyEngine
+	forwardAll bool // tunnel mode: rewrite all destinations to 127.0.0.1
 }
 
 func NewNetstackManager() *NetstackManager {
@@ -41,6 +42,14 @@ func NewNetstackManager() *NetstackManager {
 // Must be called before Start. If not set, all traffic is forwarded.
 func (m *NetstackManager) SetPolicyEngine(engine *acl.PolicyEngine) {
 	m.acl = engine
+}
+
+// SetForwardAll configures the forwarder to rewrite ALL destinations to 127.0.0.1.
+// Used for tunnel interfaces where the netstack is purely a transport layer and all
+// received traffic should be delivered to services on the local host.
+// Must be called before Start.
+func (m *NetstackManager) SetForwardAll(enabled bool) {
+	m.forwardAll = enabled
 }
 
 func (m *NetstackManager) Start(cfg *domain.ServerConfig) error {
@@ -120,7 +129,9 @@ func (m *NetstackManager) Start(cfg *domain.ServerConfig) error {
 
 	// Register TCP/UDP forwarders before creating the WireGuard device.
 	// Pass the local VPN address so traffic to our own IP is rewritten to 127.0.0.1.
-	m.forwarder = startForwarder(m.gvStack, localAddr.String(), m.acl)
+	fwd := startForwarder(m.gvStack, localAddr.String(), m.acl)
+	fwd.forwardAll = m.forwardAll
+	m.forwarder = fwd
 
 	// Create the netTun-compatible tun.Device backed by the channel endpoint
 	tunDev := &netstackTun{
@@ -211,6 +222,23 @@ func (m *NetstackManager) Close() error {
 		m.dev.Close()
 	}
 	return nil
+}
+
+// RegisterTunnelDialer registers a tunnel dialer with the forwarder.
+// Traffic matching the dialer's subnets will be routed through the tunnel.
+func (m *NetstackManager) RegisterTunnelDialer(td TunnelDialer) {
+	if m.forwarder != nil {
+		m.forwarder.tunnels.register(td)
+		slog.Info("netstack: registered tunnel dialer", "tunnel", td.TunnelID(), "subnets", td.Subnets())
+	}
+}
+
+// UnregisterTunnelDialer removes a tunnel dialer from the forwarder.
+func (m *NetstackManager) UnregisterTunnelDialer(tunnelID string) {
+	if m.forwarder != nil {
+		m.forwarder.tunnels.unregister(tunnelID)
+		slog.Info("netstack: unregistered tunnel dialer", "tunnel", tunnelID)
+	}
 }
 
 var _ Manager = (*NetstackManager)(nil)

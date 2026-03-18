@@ -1,17 +1,16 @@
 <script lang="ts">
 	import type { Peer, PeerStats } from '$lib/api';
-	import { api } from '$lib/api';
 	import { togglePeer, deletePeer } from '$lib/stores/peers';
 	import { user } from '$lib/stores/auth';
 	import { formatBytes, formatTimeAgo } from '$lib/format';
-	import { Download, QrCode, Power, Trash2 } from 'lucide-svelte';
+	import { Power, RefreshCw, Trash2 } from 'lucide-svelte';
 
 	let {
 		peers,
-		statsMap
-	}: { peers: Peer[]; statsMap: Map<string, PeerStats> } = $props();
+		statsMap,
+		onregenerate
+	}: { peers: Peer[]; statsMap: Map<string, PeerStats>; onregenerate: (peer: Peer) => void } = $props();
 
-	let qrPeerId = $state<string | null>(null);
 	let deleting = $state<string | null>(null);
 
 	async function handleDelete(peer: Peer) {
@@ -85,20 +84,12 @@
 							>
 								<Power size={15} class={peer.enabled ? 'text-emerald-500' : ''} />
 							</button>
-							<a
-								href={api.getConfigURL(peer.id)}
-								class="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-								title="Download config"
-								download
-							>
-								<Download size={15} />
-							</a>
 							<button
-								onclick={() => (qrPeerId = qrPeerId === peer.id ? null : peer.id)}
+								onclick={() => onregenerate(peer)}
 								class="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-								title="Show QR code"
+								title="Regenerate config"
 							>
-								<QrCode size={15} />
+								<RefreshCw size={15} />
 							</button>
 							<button
 								onclick={() => handleDelete(peer)}
@@ -111,19 +102,6 @@
 						</div>
 					</td>
 				</tr>
-				{#if qrPeerId === peer.id}
-					<tr>
-						<td colspan={$user?.role === 'admin' ? 7 : 6} class="bg-zinc-50 px-4 py-4 dark:bg-zinc-800">
-							<div class="flex justify-center">
-								<img
-									src={api.getQRCodeURL(peer.id)}
-									alt="QR Code for {peer.name}"
-									class="h-48 w-48"
-								/>
-							</div>
-						</td>
-					</tr>
-				{/if}
 			{:else}
 				<tr>
 					<td colspan={$user?.role === 'admin' ? 7 : 6} class="py-12 text-center text-zinc-400 dark:text-zinc-500">

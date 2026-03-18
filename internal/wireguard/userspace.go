@@ -160,6 +160,14 @@ func (m *UserspaceManager) AddPeer(p *domain.Peer) error {
 		AllowedIPs: parseAllowedIPs(p.Address),
 	}
 
+	if p.Endpoint != "" {
+		udpAddr, resolveErr := net.ResolveUDPAddr("udp", p.Endpoint)
+		if resolveErr != nil {
+			return fmt.Errorf("resolve endpoint %q: %w", p.Endpoint, resolveErr)
+		}
+		peerCfg.Endpoint = udpAddr
+	}
+
 	if p.PresharedKey != "" {
 		psk, err := wgtypes.ParseKey(p.PresharedKey)
 		if err != nil {

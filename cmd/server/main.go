@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hayward-solutions/wireguard-ui/frontend"
 	"github.com/hayward-solutions/wireguard-ui/internal/acl"
 	"github.com/hayward-solutions/wireguard-ui/internal/api"
@@ -223,6 +225,55 @@ func run() error {
 		}
 	}
 
+	// Initialize tunnel manager
+	var tunnelMode wireguard.TunnelMode
+	switch {
+	case cfg.WGMockMode:
+		tunnelMode = wireguard.TunnelModeMock
+	case cfg.WGNetstackMode:
+		tunnelMode = wireguard.TunnelModeNetstack
+	case cfg.WGUserspaceMode:
+		tunnelMode = wireguard.TunnelModeUserspace
+	default:
+		tunnelMode = wireguard.TunnelModeKernel
+	}
+	tunnelMgr := wireguard.NewTunnelManager(tunnelMode, cfg.WGInterfaceName)
+
+	// For netstack mode, give the TunnelManager a reference to the main
+	// NetstackManager so tunnel dialers can be registered on the forwarder.
+	if cfg.WGNetstackMode {
+		if nm, ok := wg.(*wireguard.NetstackManager); ok {
+			tunnelMgr.SetMainNetstackManager(nm)
+		}
+	}
+
+	// Bootstrap tunnels from TUNNEL_PEERS env var (first-boot)
+	if cfg.TunnelPeers != "" {
+		if err := bootstrapTunnels(ctx, store, cfg.TunnelPeers); err != nil {
+			slog.Error("failed to bootstrap tunnels from TUNNEL_PEERS", "error", err)
+		}
+	}
+
+	// Start all enabled tunnels from database
+	{
+		tunnels, err := store.ListEnabledTunnels(ctx)
+		if err != nil {
+			slog.Error("failed to list tunnels for startup", "error", err)
+		} else {
+			started := 0
+			for i := range tunnels {
+				if err := tunnelMgr.StartTunnel(&tunnels[i]); err != nil {
+					slog.Error("failed to start tunnel", "error", err, "tunnel", tunnels[i].Name)
+				} else {
+					started++
+				}
+			}
+			if started > 0 {
+				slog.Info("started tunnels from database", "count", started)
+			}
+		}
+	}
+
 	// Reload ACL policies now that listeners are registered and peers are synced.
 	// The initial Reload() above ran before listeners were registered.
 	if err := policyEngine.Reload(ctx, store); err != nil {
@@ -254,6 +305,9 @@ func run() error {
 				if err := store.CleanExpiredSessions(context.Background()); err != nil {
 					slog.Error("failed to clean expired sessions", "error", err)
 				}
+				if err := store.DeleteExpiredAPITokens(context.Background()); err != nil {
+					slog.Error("failed to clean expired API tokens", "error", err)
+				}
 			}
 		}
 	}()
@@ -284,6 +338,7 @@ func run() error {
 	router := api.NewRouter(api.RouterConfig{
 		Store:               store,
 		WG:                  wg,
+		TunnelManager:       tunnelMgr,
 		JWTManager:          jwtMgr,
 		OIDCProvider:        oidcProvider,
 		Monitor:             mon,
@@ -295,6 +350,7 @@ func run() error {
 		SessionExpiry:       cfg.SessionExpiry,
 		DevMode:             cfg.DevMode,
 		AdminAPIKey:         cfg.AdminAPIKey,
+		APITokenMaxLifetime: cfg.APITokenMaxLifetime,
 		OIDCAdminGroup:      cfg.OIDCAdminGroup,
 		RequireHTTPS:        cfg.RequireHTTPS,
 		AllowCustomScripts:  cfg.AllowCustomScripts,
@@ -324,6 +380,98 @@ func run() error {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
+	tunnelMgr.Close()
 	wg.Close()
 	return server.Shutdown(shutdownCtx)
+}
+
+// tunnelPeerSpec represents a tunnel definition from the TUNNEL_PEERS env var.
+type tunnelPeerSpec struct {
+	Name                string `json:"name"`
+	Address             string `json:"address"`
+	ListenPort          int    `json:"listen_port"`
+	PeerPublicKey       string `json:"peer_public_key"`
+	PeerEndpoint        string `json:"peer_endpoint"`
+	PeerAllowedIPs      string `json:"peer_allowed_ips"`
+	PersistentKeepalive int    `json:"persistent_keepalive"`
+	DNS                 string `json:"dns"`
+	MTU                 int    `json:"mtu"`
+}
+
+// bootstrapTunnels parses the TUNNEL_PEERS JSON array and creates tunnels that don't already exist.
+func bootstrapTunnels(ctx context.Context, store database.Store, tunnelPeersJSON string) error {
+	var specs []tunnelPeerSpec
+	if err := json.Unmarshal([]byte(tunnelPeersJSON), &specs); err != nil {
+		return fmt.Errorf("parse TUNNEL_PEERS JSON: %w", err)
+	}
+
+	for _, spec := range specs {
+		if spec.Name == "" {
+			slog.Warn("skipping tunnel with empty name in TUNNEL_PEERS")
+			continue
+		}
+
+		existing, err := store.GetTunnelByName(ctx, spec.Name)
+		if err != nil {
+			return fmt.Errorf("check existing tunnel %q: %w", spec.Name, err)
+		}
+		if existing != nil {
+			slog.Info("tunnel already exists, skipping bootstrap", "name", spec.Name)
+			continue
+		}
+
+		keyPair, err := wireguard.GenerateKeyPair()
+		if err != nil {
+			return fmt.Errorf("generate keypair for tunnel %q: %w", spec.Name, err)
+		}
+
+		psk := ""
+		pskKey, err := wireguard.GeneratePresharedKey()
+		if err != nil {
+			slog.Warn("failed to generate PSK for tunnel, continuing without", "name", spec.Name, "error", err)
+		} else {
+			psk = pskKey
+		}
+
+		address := spec.Address
+		if address == "" {
+			address = "10.100.0.1/30"
+		}
+		mtu := spec.MTU
+		if mtu == 0 {
+			mtu = 1420
+		}
+		keepalive := spec.PersistentKeepalive
+		if keepalive == 0 {
+			keepalive = 25
+		}
+
+		tunnel := &domain.Tunnel{
+			ID:                  uuid.New().String(),
+			Name:                spec.Name,
+			PrivateKey:          keyPair.PrivateKey,
+			PublicKey:           keyPair.PublicKey,
+			Address:             address,
+			ListenPort:          spec.ListenPort,
+			DNS:                 spec.DNS,
+			MTU:                 mtu,
+			PeerPublicKey:       spec.PeerPublicKey,
+			PeerEndpoint:        spec.PeerEndpoint,
+			PresharedKey:        psk,
+			PeerAllowedIPs:      spec.PeerAllowedIPs,
+			PersistentKeepalive: keepalive,
+			Enabled:             true,
+		}
+
+		if err := store.CreateTunnel(ctx, tunnel); err != nil {
+			return fmt.Errorf("create tunnel %q: %w", spec.Name, err)
+		}
+
+		slog.Info("bootstrapped tunnel from TUNNEL_PEERS",
+			"name", tunnel.Name,
+			"id", tunnel.ID,
+			"public_key", tunnel.PublicKey)
+	}
+
+	return nil
 }
