@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend build test test-vpn lint docker clean
+.PHONY: dev dev-backend dev-frontend build test test-vpn test-tunnel lint docker clean
 
 # Run both frontend and backend with hot reload
 dev:
@@ -33,6 +33,14 @@ test-vpn:
 	docker compose -f tests/integration/docker-compose.test.yml up --abort-on-container-exit --exit-code-from wg-client; \
 	  EXIT_CODE=$$?; \
 	  docker compose -f tests/integration/docker-compose.test.yml down -v; \
+	  exit $$EXIT_CODE
+
+# Integration test: verify WireGuard tunnel routing between two servers
+test-tunnel:
+	docker compose -f tests/integration/tunnel/docker-compose.test.yml build
+	docker compose -f tests/integration/tunnel/docker-compose.test.yml up --abort-on-container-exit --exit-code-from test-runner; \
+	  EXIT_CODE=$$?; \
+	  docker compose -f tests/integration/tunnel/docker-compose.test.yml down -v; \
 	  exit $$EXIT_CODE
 
 # Lint
