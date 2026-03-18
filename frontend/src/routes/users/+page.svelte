@@ -3,6 +3,7 @@
 	import { api, type User, type Group } from '$lib/api';
 	import { user as currentUser } from '$lib/stores/auth';
 	import { Plus, Trash2, KeyRound, Pencil, X, UsersRound } from 'lucide-svelte';
+	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { get } from 'svelte/store';
 
 	let users = $state<User[]>([]);
@@ -232,22 +233,22 @@
 			{/if}
 			<form onsubmit={(e) => { e.preventDefault(); handleCreate(); }} class="mt-4 space-y-4">
 				<div>
-					<label for="c-username" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Username</label>
+					<label for="c-username" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Username <Tooltip text="Unique login identifier" /></label>
 					<input id="c-username" type="text" required bind:value={createForm.username}
 						class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-500" />
 				</div>
 				<div>
-					<label for="c-password" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Password</label>
+					<label for="c-password" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Password <Tooltip text="Account password for authentication" /></label>
 					<input id="c-password" type="password" required bind:value={createForm.password}
 						class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-500" />
 				</div>
 				<div>
-					<label for="c-name" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Display Name</label>
+					<label for="c-name" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Display Name <Tooltip text="Optional friendly name shown in the UI" /></label>
 					<input id="c-name" type="text" bind:value={createForm.name}
 						class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-500" />
 				</div>
 				<div>
-					<label for="c-role" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Role</label>
+					<label for="c-role" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Role <Tooltip text="Permission level — Viewer (read-only), Editor (manage peers), Admin (full access)" /></label>
 					<select id="c-role" bind:value={createForm.role}
 						class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-500">
 						<option value="viewer">Viewer</option>
@@ -279,17 +280,17 @@
 			{/if}
 			<form onsubmit={(e) => { e.preventDefault(); handleEdit(); }} class="mt-4 space-y-4">
 				<div>
-					<label for="e-username" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Username</label>
+					<label for="e-username" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Username <Tooltip text="Unique login identifier" /></label>
 					<input id="e-username" type="text" bind:value={editForm.username}
 						class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-500" />
 				</div>
 				<div>
-					<label for="e-name" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Display Name</label>
+					<label for="e-name" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Display Name <Tooltip text="Optional friendly name shown in the UI" /></label>
 					<input id="e-name" type="text" bind:value={editForm.name}
 						class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-500" />
 				</div>
 				<div>
-					<label for="e-role" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Role</label>
+					<label for="e-role" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Role <Tooltip text="Permission level — Viewer (read-only), Editor (manage peers), Admin (full access)" /></label>
 					<select id="e-role" bind:value={editForm.role}
 						class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-500">
 						<option value="viewer">Viewer</option>

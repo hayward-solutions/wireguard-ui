@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { api, type ACLRule, type Group, type User } from '$lib/api';
 	import { Plus, Trash2, Pencil, X, ToggleLeft, ToggleRight } from 'lucide-svelte';
+	import Tooltip from '$lib/components/Tooltip.svelte';
 
 	let rules = $state<ACLRule[]>([]);
 	let groups = $state<Group[]>([]);
@@ -293,29 +294,29 @@
 			<form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }} class="mt-4 space-y-4">
 				<div class="grid grid-cols-2 gap-4">
 					<div>
-						<label for="r-name" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Name</label>
+						<label for="r-name" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Name <Tooltip text="A descriptive name for this access control rule" /></label>
 						<input id="r-name" type="text" required bind:value={form.name}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
 					<div>
-						<label for="r-pri" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Priority</label>
+						<label for="r-pri" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Priority <Tooltip text="Rule evaluation order. Lower numbers are evaluated first (0 = highest priority)" /></label>
 						<input id="r-pri" type="number" min="0" required bind:value={form.priority}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
 				</div>
 				<div>
-					<label for="r-desc" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Description</label>
+					<label for="r-desc" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Description <Tooltip text="Optional note explaining the purpose of this rule" /></label>
 					<input id="r-desc" type="text" bind:value={form.description}
 						class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 				</div>
 				<div class="grid grid-cols-3 gap-4">
 					<div>
-						<label for="r-cidr" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Destination CIDR</label>
+						<label for="r-cidr" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Destination CIDR <Tooltip text="The network range this rule applies to in CIDR notation (e.g., 10.0.0.0/24)" /></label>
 						<input id="r-cidr" type="text" required placeholder="10.0.0.0/24" bind:value={form.dst_cidr}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
 					<div>
-						<label for="r-proto" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Protocol</label>
+						<label for="r-proto" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Protocol <Tooltip text="Network protocol to match. &quot;Any&quot; matches all protocols" /></label>
 						<select id="r-proto" bind:value={form.protocol}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100">
 							<option value="any">Any</option>
@@ -324,13 +325,13 @@
 						</select>
 					</div>
 					<div>
-						<label for="r-ports" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Ports</label>
+						<label for="r-ports" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Ports <Tooltip text="Comma-separated port numbers or ranges. Leave empty to match all ports" /></label>
 						<input id="r-ports" type="text" placeholder="All" bind:value={form.dst_ports}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
 				</div>
 				<div>
-					<label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Applies To</label>
+					<label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Applies To <Tooltip text="Scope of the rule — global (all peers), specific group, or specific user" /></label>
 					<div class="mt-2 flex gap-4">
 						<label class="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
 							<input type="radio" value="global" bind:group={form.target_type} class="accent-zinc-900 dark:accent-zinc-100" /> Global
@@ -362,7 +363,7 @@
 				</div>
 				<div class="flex items-center gap-2">
 					<input id="r-enabled" type="checkbox" bind:checked={form.enabled} class="accent-zinc-900 dark:accent-zinc-100" />
-					<label for="r-enabled" class="text-sm text-zinc-700 dark:text-zinc-300">Enabled</label>
+					<label for="r-enabled" class="text-sm text-zinc-700 dark:text-zinc-300">Enabled <Tooltip text="Whether this rule is currently active" /></label>
 				</div>
 				<div class="flex justify-end gap-3 pt-2">
 					<button type="button" onclick={() => (showForm = false)}
