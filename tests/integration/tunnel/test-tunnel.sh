@@ -36,7 +36,7 @@ TUNNEL_A_RESPONSE=$(curl -sf -X POST "${SERVER_A_URL}/api/v1/tunnels" \
     "name": "tunnel-to-b",
     "description": "Tunnel from A to B",
     "address": "10.100.0.1/30",
-    "listen_port": 51825,
+    "listen_port": 0,
     "peer_allowed_ips": "10.1.0.0/24"
   }')
 
@@ -65,9 +65,9 @@ TUNNEL_B_PAYLOAD=$(jq -n \
   --arg name "tunnel-to-a" \
   --arg desc "Tunnel from B to A" \
   --arg addr "10.100.0.2/30" \
-  --argjson port 51826 \
+  --argjson port 0 \
   --arg ppk "$TUNNEL_A_PUBKEY" \
-  --arg ep "server-a:51825" \
+  --arg ep "server-a:51820" \
   --arg psk "$TUNNEL_A_PSK" \
   --arg aips "10.0.0.0/24" \
   '{
@@ -104,7 +104,7 @@ UPDATE_RESPONSE=$(curl -sf -X PUT "${SERVER_A_URL}/api/v1/tunnels/${TUNNEL_A_ID}
   -H "X-API-Key: ${SERVER_A_API_KEY}" \
   -d "{
     \"peer_public_key\": \"${TUNNEL_B_PUBKEY}\",
-    \"peer_endpoint\": \"server-b:51826\"
+    \"peer_endpoint\": \"server-b:51821\"
   }")
 
 if echo "$UPDATE_RESPONSE" | jq -e '.data.peer_public_key' > /dev/null 2>&1; then
