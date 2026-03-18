@@ -28,8 +28,9 @@
 	// Delete confirm
 	let deleteTunnel = $state<TunnelWithStatus | null>(null);
 
-	// Created tunnel (show PSK once)
+	// Created tunnel (shown once)
 	let createdPSK = $state('');
+	let createdPublicKey = $state('');
 
 	async function loadData() {
 		try {
@@ -77,6 +78,9 @@
 				await api.updateTunnel(editTunnel.id, form);
 			} else {
 				const result = await api.createTunnel(form);
+				if (result.public_key) {
+					createdPublicKey = result.public_key;
+				}
 				if (result.preshared_key) {
 					createdPSK = result.preshared_key;
 				}
@@ -130,14 +134,25 @@
 		<div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">{error}</div>
 	{/if}
 
-	{#if createdPSK}
+	{#if createdPublicKey || createdPSK}
 		<div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-950">
-			<div class="flex items-center justify-between">
-				<div>
-					<p class="text-sm font-medium text-amber-800 dark:text-amber-200">Preshared Key (shown once)</p>
-					<p class="mt-1 font-mono text-xs text-amber-700 dark:text-amber-300 select-all">{createdPSK}</p>
+			<div class="flex items-start justify-between">
+				<div class="space-y-2">
+					<p class="text-sm text-amber-800 dark:text-amber-200">Tunnel created. Download the remote config from the table below, or copy these keys to configure the other server manually.</p>
+					{#if createdPublicKey}
+						<div>
+							<p class="text-xs font-medium text-amber-800 dark:text-amber-200">This tunnel's public key <span class="font-normal">&mdash; paste into the remote server's tunnel config</span></p>
+							<p class="mt-0.5 font-mono text-xs text-amber-700 dark:text-amber-300 select-all">{createdPublicKey}</p>
+						</div>
+					{/if}
+					{#if createdPSK}
+						<div>
+							<p class="text-xs font-medium text-amber-800 dark:text-amber-200">Pre-shared key <span class="font-normal">&mdash; both ends must use the same key (shown once)</span></p>
+							<p class="mt-0.5 font-mono text-xs text-amber-700 dark:text-amber-300 select-all">{createdPSK}</p>
+						</div>
+					{/if}
 				</div>
-				<button onclick={() => (createdPSK = '')} class="text-amber-400 hover:text-amber-600 dark:text-amber-500 dark:hover:text-amber-300">
+				<button onclick={() => { createdPSK = ''; createdPublicKey = ''; }} class="ml-4 text-amber-400 hover:text-amber-600 dark:text-amber-500 dark:hover:text-amber-300">
 					<X size={16} />
 				</button>
 			</div>
@@ -241,7 +256,7 @@
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
 					<div>
-						<label for="t-addr" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">VPN Address <Tooltip text="The local IP address for this tunnel interface in CIDR notation (e.g., 10.100.0.1/30)" /></label>
+						<label for="t-addr" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">VPN Address <Tooltip text="Point-to-point address for this end of the tunnel. Use a /30 subnet — the remote end gets the other IP automatically (e.g., .1 here → .2 there)" /></label>
 						<input id="t-addr" type="text" required placeholder="10.100.0.1/30" bind:value={form.address}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
@@ -255,8 +270,15 @@
 				<div class="border-t border-zinc-100 pt-4 dark:border-zinc-800">
 					<h3 class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Remote Peer</h3>
 				</div>
+				{#if editTunnel}
+					<div>
+						<label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">This Tunnel's Public Key <Tooltip text="Give this key to the remote server so it can authenticate this tunnel" /></label>
+						<input type="text" readonly value={editTunnel.public_key}
+							class="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-mono text-zinc-500 select-all focus:outline-none dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-400" />
+					</div>
+				{/if}
 				<div>
-					<label for="t-peer-pk" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Public Key <Tooltip text="The WireGuard public key of the remote server you're connecting to" /></label>
+					<label for="t-peer-pk" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Public Key <Tooltip text="The WireGuard public key of the remote server. Get this from the remote server's tunnel config, or set up the remote end first using the downloaded config" /></label>
 					<input id="t-peer-pk" type="text" placeholder="Remote server's public key" bind:value={form.peer_public_key}
 						class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 				</div>
@@ -294,7 +316,7 @@
 					</div>
 				</div>
 				<div>
-					<label for="t-dns" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">DNS <Tooltip text="Comma-separated DNS servers for name resolution over this tunnel" /></label>
+					<label for="t-dns" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">DNS <Tooltip text="DNS servers for resolving hostnames on the remote network. Leave blank unless the remote side has internal DNS you need to reach" /></label>
 					<input id="t-dns" type="text" placeholder="Optional" bind:value={form.dns}
 						class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 				</div>
