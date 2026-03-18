@@ -5,6 +5,7 @@
 	import { renderPeerConfig } from '$lib/crypto/render-config';
 	import { generateQRCodeDataURL } from '$lib/crypto/qrcode';
 	import { X, ChevronDown, ChevronUp, Download, QrCode, AlertTriangle } from 'lucide-svelte';
+	import Tooltip from '$lib/components/Tooltip.svelte';
 
 	let { open = $bindable(false) }: { open: boolean } = $props();
 
@@ -193,7 +194,7 @@
 
 				<form onsubmit={handleSubmit} class="mt-5 space-y-4">
 					<div>
-						<label for="name" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Name</label>
+						<label for="name" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Name <Tooltip text="A friendly name to identify this peer device (e.g., &quot;Office laptop&quot;)" /></label>
 						<input
 							id="name"
 							type="text"
@@ -220,7 +221,7 @@
 					{#if showAdvanced}
 						<div class="space-y-4 rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-800">
 							<div>
-								<label for="allowed_ips" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Allowed IPs</label>
+								<label for="allowed_ips" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Allowed IPs <Tooltip text="CIDR subnets this peer can access. Use 0.0.0.0/0, ::/0 for full tunnel" /></label>
 								<input
 									id="allowed_ips"
 									type="text"
@@ -228,10 +229,9 @@
 									placeholder="0.0.0.0/0, ::/0"
 									class="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
 								/>
-								<p class="mt-1 text-xs text-zinc-400 dark:text-zinc-500">Routes to advertise to this peer</p>
 							</div>
 							<div>
-								<label for="dns" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">DNS</label>
+								<label for="dns" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">DNS <Tooltip text="DNS servers for this peer. Uses server DNS if left empty" /></label>
 								<input
 									id="dns"
 									type="text"

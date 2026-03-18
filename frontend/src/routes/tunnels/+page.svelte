@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { api, type TunnelWithStatus } from '$lib/api';
 	import { Plus, Trash2, Pencil, X, ToggleLeft, ToggleRight, Download } from 'lucide-svelte';
+	import Tooltip from '$lib/components/Tooltip.svelte';
 
 	let tunnels = $state<TunnelWithStatus[]>([]);
 	let loading = $state(true);
@@ -235,18 +236,18 @@
 			<form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }} class="mt-4 space-y-4">
 				<div class="grid grid-cols-2 gap-4">
 					<div>
-						<label for="t-name" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Name</label>
+						<label for="t-name" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Name <Tooltip text="A friendly name for this tunnel connection" /></label>
 						<input id="t-name" type="text" required bind:value={form.name}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
 					<div>
-						<label for="t-addr" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">VPN Address</label>
+						<label for="t-addr" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">VPN Address <Tooltip text="The local IP address for this tunnel interface in CIDR notation (e.g., 10.100.0.1/30)" /></label>
 						<input id="t-addr" type="text" required placeholder="10.100.0.1/30" bind:value={form.address}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
 				</div>
 				<div>
-					<label for="t-desc" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Description</label>
+					<label for="t-desc" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Description <Tooltip text="Optional note to help identify this tunnel's purpose" /></label>
 					<input id="t-desc" type="text" bind:value={form.description}
 						class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 				</div>
@@ -255,18 +256,18 @@
 					<h3 class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Remote Peer</h3>
 				</div>
 				<div>
-					<label for="t-peer-pk" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Public Key</label>
+					<label for="t-peer-pk" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Public Key <Tooltip text="The WireGuard public key of the remote server you're connecting to" /></label>
 					<input id="t-peer-pk" type="text" placeholder="Remote server's public key" bind:value={form.peer_public_key}
 						class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 				</div>
 				<div class="grid grid-cols-2 gap-4">
 					<div>
-						<label for="t-peer-ep" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Endpoint</label>
+						<label for="t-peer-ep" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Endpoint <Tooltip text="The remote server's address in host:port format (e.g., vpn.example.com:51820)" /></label>
 						<input id="t-peer-ep" type="text" placeholder="host:port" bind:value={form.peer_endpoint}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
 					<div>
-						<label for="t-peer-ips" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Allowed IPs (remote subnets)</label>
+						<label for="t-peer-ips" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Allowed IPs (remote subnets) <Tooltip text="Comma-separated CIDR subnets routed through this tunnel (e.g., 10.1.0.0/24)" /></label>
 						<input id="t-peer-ips" type="text" placeholder="10.1.0.0/24, 10.2.0.0/24" bind:value={form.peer_allowed_ips}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
@@ -277,24 +278,23 @@
 				</div>
 				<div class="grid grid-cols-3 gap-4">
 					<div>
-						<label for="t-port" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Listen Port</label>
+						<label for="t-port" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Listen Port <Tooltip text="Local UDP port for WireGuard to bind to. Use 0 for an ephemeral port (recommended for outbound-only tunnels)" /></label>
 						<input id="t-port" type="number" min="0" max="65535" bind:value={form.listen_port}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
-						<p class="mt-0.5 text-xs text-zinc-400">0 = ephemeral</p>
 					</div>
 					<div>
-						<label for="t-mtu" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">MTU</label>
+						<label for="t-mtu" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">MTU <Tooltip text="Maximum packet size in bytes. Default 1420 accounts for WireGuard overhead. Lower if you experience connectivity issues" /></label>
 						<input id="t-mtu" type="number" min="1280" max="9000" bind:value={form.mtu}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
 					<div>
-						<label for="t-ka" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Keepalive (s)</label>
+						<label for="t-ka" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Keepalive (s) <Tooltip text="Seconds between keepalive packets. Keeps NAT mappings alive for peers behind firewalls. 25s is recommended; 0 disables" /></label>
 						<input id="t-ka" type="number" min="0" bind:value={form.persistent_keepalive}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
 				</div>
 				<div>
-					<label for="t-dns" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">DNS</label>
+					<label for="t-dns" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">DNS <Tooltip text="Comma-separated DNS servers for name resolution over this tunnel" /></label>
 					<input id="t-dns" type="text" placeholder="Optional" bind:value={form.dns}
 						class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 				</div>

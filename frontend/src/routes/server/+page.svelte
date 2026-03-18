@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { api, type ServerConfig } from '$lib/api';
 	import { Copy, Check, RefreshCw } from 'lucide-svelte';
+	import Tooltip from '$lib/components/Tooltip.svelte';
 
 	let config = $state<ServerConfig | null>(null);
 	let saving = $state(false);
@@ -86,7 +87,7 @@
 			<form onsubmit={handleSave} class="space-y-5">
 				<div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
 					<div>
-						<label for="endpoint" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Endpoint</label>
+						<label for="endpoint" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Endpoint <Tooltip text="Public hostname or IP where peers connect, including port (e.g., vpn.example.com:51820)" /></label>
 						<input
 							id="endpoint"
 							type="text"
@@ -95,7 +96,7 @@
 						/>
 					</div>
 					<div>
-						<label for="listen_port" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Listen Port</label>
+						<label for="listen_port" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Listen Port <Tooltip text="UDP port the WireGuard interface listens on. Default: 51820" /></label>
 						<input
 							id="listen_port"
 							type="number"
@@ -104,7 +105,7 @@
 						/>
 					</div>
 					<div>
-						<label for="address" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Address (CIDR)</label>
+						<label for="address" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Address (CIDR) <Tooltip text="The server's VPN IP and subnet (e.g., 10.0.0.1/24). Peers are allocated IPs from this subnet" /></label>
 						<input
 							id="address"
 							type="text"
@@ -113,7 +114,7 @@
 						/>
 					</div>
 					<div>
-						<label for="dns" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">DNS</label>
+						<label for="dns" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">DNS <Tooltip text="Comma-separated DNS servers pushed to peers (e.g., 1.1.1.1, 8.8.8.8)" /></label>
 						<input
 							id="dns"
 							type="text"
@@ -122,7 +123,7 @@
 						/>
 					</div>
 					<div>
-						<label for="mtu" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">MTU</label>
+						<label for="mtu" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">MTU <Tooltip text="Maximum packet size. Default 1420 accounts for WireGuard encapsulation overhead" /></label>
 						<input
 							id="mtu"
 							type="number"
@@ -139,7 +140,7 @@
 
 				<div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
 					<div>
-						<label for="default_allowed_ips" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Allowed IPs</label>
+						<label for="default_allowed_ips" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Allowed IPs <Tooltip text="Default routes advertised to new peers. Use 0.0.0.0/0, ::/0 to route all traffic through the VPN" /></label>
 						<input
 							id="default_allowed_ips"
 							type="text"
@@ -149,7 +150,7 @@
 						/>
 					</div>
 					<div>
-						<label for="default_dns" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">DNS</label>
+						<label for="default_dns" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">DNS <Tooltip text="Default DNS servers for new peers. Falls back to server DNS if empty" /></label>
 						<input
 							id="default_dns"
 							type="text"
@@ -165,7 +166,7 @@
 				</div>
 
 				<div>
-					<label for="post_up" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Post Up</label>
+					<label for="post_up" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Post Up <Tooltip text="Shell command run after the WireGuard interface starts. Requires ALLOW_CUSTOM_SCRIPTS=true" /></label>
 					<input
 						id="post_up"
 						type="text"
@@ -176,7 +177,7 @@
 				</div>
 
 				<div>
-					<label for="post_down" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Post Down</label>
+					<label for="post_down" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Post Down <Tooltip text="Shell command run after the WireGuard interface stops. Used to clean up Post Up changes" /></label>
 					<input
 						id="post_down"
 						type="text"
