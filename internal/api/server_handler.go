@@ -67,6 +67,7 @@ func (h *ServerHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		Endpoint          string                 `json:"endpoint"`
 		DefaultAllowedIPs *string                `json:"default_allowed_ips"`
 		DefaultDNS        *string                `json:"default_dns"`
+		TunnelSubnet      *string                `json:"tunnel_subnet"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
@@ -141,6 +142,9 @@ func (h *ServerHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if update.DefaultDNS != nil {
 		cfg.DefaultDNS = *update.DefaultDNS
+	}
+	if update.TunnelSubnet != nil {
+		cfg.TunnelSubnet = *update.TunnelSubnet
 	}
 
 	if err := h.store.SaveServerConfig(r.Context(), cfg); err != nil {

@@ -26,6 +26,7 @@ type ServerConfig struct {
 	Endpoint          string          `json:"endpoint"`
 	DefaultAllowedIPs string          `json:"default_allowed_ips"`
 	DefaultDNS        string          `json:"default_dns"`
+	TunnelSubnet      string          `json:"tunnel_subnet"`
 	CreatedAt         time.Time       `json:"created_at"`
 	UpdatedAt         time.Time       `json:"updated_at"`
 

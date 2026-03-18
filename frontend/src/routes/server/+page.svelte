@@ -162,6 +162,24 @@
 				</div>
 
 				<div class="col-span-full border-t border-zinc-100 pt-5 dark:border-zinc-800">
+					<h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Tunnels</h3>
+					<p class="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">Settings for server-to-server tunnel connections</p>
+				</div>
+
+				<div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+					<div>
+						<label for="tunnel_subnet" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Tunnel Subnet <Tooltip text="CIDR range used to auto-allocate /30 point-to-point addresses for tunnels. Each tunnel gets a /30 block from this range." /></label>
+						<input
+							id="tunnel_subnet"
+							type="text"
+							bind:value={config.tunnel_subnet}
+							placeholder="10.100.0.0/16"
+							class="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+						/>
+					</div>
+				</div>
+
+				<div class="col-span-full border-t border-zinc-100 pt-5 dark:border-zinc-800">
 					<h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Hooks</h3>
 				</div>
 

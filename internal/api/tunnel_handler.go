@@ -148,6 +148,8 @@ func (h *TunnelHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name                string `json:"name"`
 		Description         string `json:"description"`
+		PrivateKey          string `json:"private_key"`
+		PublicKey           string `json:"public_key"`
 		Address             string `json:"address"`
 		ListenPort          int    `json:"listen_port"`
 		DNS                 string `json:"dns"`
@@ -188,12 +190,19 @@ func (h *TunnelHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate keypair for this end of the tunnel
-	keyPair, err := wireguard.GenerateKeyPair()
-	if err != nil {
-		slog.Error("generate tunnel keypair", "error", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to generate keys")
-		return
+	// Use client-provided keypair if both private and public keys are given,
+	// otherwise generate a new keypair server-side.
+	var keyPair *wireguard.KeyPair
+	if req.PrivateKey != "" && req.PublicKey != "" {
+		keyPair = &wireguard.KeyPair{PrivateKey: req.PrivateKey, PublicKey: req.PublicKey}
+	} else {
+		var err error
+		keyPair, err = wireguard.GenerateKeyPair()
+		if err != nil {
+			slog.Error("generate tunnel keypair", "error", err)
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to generate keys")
+			return
+		}
 	}
 
 	// Use provided PSK (for tunnel peering where both sides need the same key),

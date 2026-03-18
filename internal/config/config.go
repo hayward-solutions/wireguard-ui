@@ -57,7 +57,8 @@ type Config struct {
 	EncryptionKey string
 
 	// Tunnels
-	TunnelPeers string // JSON array from TUNNEL_PEERS env var for first-boot
+	TunnelPeers  string // JSON array from TUNNEL_PEERS env var for first-boot
+	TunnelSubnet string // CIDR range for auto-allocating tunnel /30 addresses
 
 	// Monitoring
 	StatsInterval time.Duration
@@ -100,6 +101,7 @@ func Load() (*Config, error) {
 		WGDefaultAllowedIPs: envOrDefault("WG_DEFAULT_ALLOWED_IPS", "0.0.0.0/0, ::/0"),
 		AdminUsername:        envOrDefault("ADMIN_USERNAME", "admin"),
 		TunnelPeers:     os.Getenv("TUNNEL_PEERS"),
+		TunnelSubnet:    envOrDefault("TUNNEL_SUBNET", "10.100.0.0/16"),
 		AdminPassword:   os.Getenv("ADMIN_PASSWORD"),
 		AdminAPIKey:     os.Getenv("ADMIN_API_KEY"),
 		EncryptionKey:   os.Getenv("ENCRYPTION_KEY"),

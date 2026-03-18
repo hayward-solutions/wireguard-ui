@@ -160,6 +160,7 @@ func run() error {
 			Endpoint:          cfg.WGEndpoint,
 			DefaultAllowedIPs: cfg.WGDefaultAllowedIPs,
 			DefaultDNS:        cfg.WGDNS,
+			TunnelSubnet:      cfg.TunnelSubnet,
 			CreatedAt:         time.Now(),
 		}
 		if err := store.SaveServerConfig(ctx, serverCfg); err != nil {

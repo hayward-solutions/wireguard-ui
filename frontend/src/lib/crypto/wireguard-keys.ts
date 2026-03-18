@@ -22,3 +22,11 @@ export function generateKeyPair(): { privateKey: string; publicKey: string } {
 		publicKey: toBase64(publicBytes)
 	};
 }
+
+/**
+ * Generates a WireGuard-compatible pre-shared key.
+ * PSK: 32 random bytes, returned as a base64 string.
+ */
+export function generatePresharedKey(): string {
+	return toBase64(crypto.getRandomValues(new Uint8Array(32)));
+}

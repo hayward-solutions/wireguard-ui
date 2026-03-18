@@ -1,20 +1,52 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api, type TunnelWithStatus } from '$lib/api';
-	import { Plus, Trash2, Pencil, X, ToggleLeft, ToggleRight, Download } from 'lucide-svelte';
+	import { api, type TunnelWithStatus, type ServerConfig } from '$lib/api';
+	import { Plus, Trash2, Pencil, X, ToggleLeft, ToggleRight, Download, Copy, Check, ChevronRight, ChevronLeft } from 'lucide-svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
+	import { generateKeyPair, generatePresharedKey } from '$lib/crypto/wireguard-keys';
+	import { allocateTunnelAddress } from '$lib/tunnel-alloc';
 
 	let tunnels = $state<TunnelWithStatus[]>([]);
+	let serverConfig = $state<ServerConfig | null>(null);
 	let loading = $state(true);
 	let error = $state('');
 
-	// Create/Edit modal
-	let showForm = $state(false);
-	let editTunnel = $state<TunnelWithStatus | null>(null);
+	// Wizard state
+	let showWizard = $state(false);
+	let wizardStep = $state(1);
+	let tunnelMode = $state<'create' | 'accept'>('create');
+	let wizardError = $state('');
+
+	// Generated keys (created at wizard init)
+	let generatedKeys = $state<{ privateKey: string; publicKey: string }>({ privateKey: '', publicKey: '' });
+	let generatedPSK = $state('');
+
+	// Clipboard feedback
+	let copiedField = $state('');
+
+	// Wizard form fields
 	let form = $state({
 		name: '',
 		description: '',
-		address: '10.100.0.1/30',
+		peer_endpoint: '',
+		peer_public_key: '',
+		preshared_key: '',
+		address: '',
+		peer_allowed_ips: '',
+		listen_port: 0,
+		mtu: 1420,
+		dns: '',
+		persistent_keepalive: 25
+	});
+	let showAdvanced = $state(false);
+
+	// Edit modal (separate from wizard)
+	let showEditForm = $state(false);
+	let editTunnel = $state<TunnelWithStatus | null>(null);
+	let editForm = $state({
+		name: '',
+		description: '',
+		address: '',
 		listen_port: 0,
 		dns: '',
 		mtu: 1420,
@@ -23,18 +55,21 @@
 		peer_allowed_ips: '',
 		persistent_keepalive: 25
 	});
-	let formError = $state('');
+	let editError = $state('');
 
 	// Delete confirm
 	let deleteTunnel = $state<TunnelWithStatus | null>(null);
 
-	// Created tunnel (shown once)
-	let createdPSK = $state('');
+	// Post-creation banner
+	let lastMode = $state<'create' | 'accept' | null>(null);
 	let createdPublicKey = $state('');
+	let createdPSK = $state('');
 
 	async function loadData() {
 		try {
-			tunnels = await api.listTunnels();
+			const [t, s] = await Promise.all([api.listTunnels(), api.getServer()]);
+			tunnels = t;
+			serverConfig = s;
 		} catch (e: any) {
 			error = e.message;
 		} finally {
@@ -42,20 +77,96 @@
 		}
 	}
 
-	function openCreate() {
-		editTunnel = null;
+	function copyToClipboard(text: string, field: string) {
+		navigator.clipboard.writeText(text);
+		copiedField = field;
+		setTimeout(() => (copiedField = ''), 2000);
+	}
+
+	function openWizard(mode: 'create' | 'accept') {
+		tunnelMode = mode;
+		wizardStep = 1;
+		wizardError = '';
+		showAdvanced = false;
+
+		// Generate keys client-side
+		generatedKeys = generateKeyPair();
+		generatedPSK = mode === 'create' ? generatePresharedKey() : '';
+
+		// Auto-allocate address
+		const usedAddrs = tunnels.map((t) => t.address);
+		const subnet = serverConfig?.tunnel_subnet || '10.100.0.0/16';
+		const autoAddr = allocateTunnelAddress(subnet, usedAddrs, mode) || (mode === 'create' ? '10.100.0.1/30' : '10.100.0.2/30');
+
+		// Auto-populate advertise CIDRs from server config
+		const defaultAllowedIPs = serverConfig?.address || '';
+
 		form = {
-			name: '', description: '', address: '10.100.0.1/30', listen_port: 0,
-			dns: '', mtu: 1420, peer_public_key: '', peer_endpoint: '',
-			peer_allowed_ips: '', persistent_keepalive: 25
+			name: '',
+			description: '',
+			peer_endpoint: '',
+			peer_public_key: '',
+			preshared_key: '',
+			address: autoAddr,
+			peer_allowed_ips: defaultAllowedIPs,
+			listen_port: 0,
+			mtu: 1420,
+			dns: '',
+			persistent_keepalive: 25
 		};
-		formError = '';
-		showForm = true;
+		showWizard = true;
+	}
+
+	function nextStep() {
+		wizardError = '';
+		if (wizardStep === 1) {
+			if (!form.name.trim()) { wizardError = 'Name is required'; return; }
+		}
+		if (wizardStep === 2 && tunnelMode === 'accept') {
+			if (!form.peer_public_key.trim()) { wizardError = 'Remote public key is required'; return; }
+			if (!form.preshared_key.trim()) { wizardError = 'Pre-shared key is required'; return; }
+		}
+		if (wizardStep < 4) wizardStep++;
+	}
+
+	function prevStep() {
+		wizardError = '';
+		if (wizardStep > 1) wizardStep--;
+	}
+
+	async function finishWizard() {
+		wizardError = '';
+		try {
+			const payload: any = {
+				name: form.name,
+				description: form.description,
+				private_key: generatedKeys.privateKey,
+				public_key: generatedKeys.publicKey,
+				address: form.address,
+				listen_port: form.listen_port,
+				mtu: form.mtu,
+				dns: form.dns,
+				peer_public_key: form.peer_public_key,
+				peer_endpoint: form.peer_endpoint,
+				peer_allowed_ips: form.peer_allowed_ips,
+				persistent_keepalive: form.persistent_keepalive,
+				preshared_key: tunnelMode === 'create' ? generatedPSK : form.preshared_key
+			};
+
+			await api.createTunnel(payload);
+			lastMode = tunnelMode;
+			createdPublicKey = generatedKeys.publicKey;
+			createdPSK = tunnelMode === 'create' ? generatedPSK : '';
+			showWizard = false;
+			await loadData();
+		} catch (e: any) {
+			wizardError = e.message;
+		}
 	}
 
 	function openEdit(t: TunnelWithStatus) {
 		editTunnel = t;
-		form = {
+		editForm = {
 			name: t.name,
 			description: t.description,
 			address: t.address,
@@ -67,28 +178,19 @@
 			peer_allowed_ips: t.peer_allowed_ips,
 			persistent_keepalive: t.persistent_keepalive
 		};
-		formError = '';
-		showForm = true;
+		editError = '';
+		showEditForm = true;
 	}
 
-	async function handleSubmit() {
-		formError = '';
+	async function handleEditSubmit() {
+		editError = '';
+		if (!editTunnel) return;
 		try {
-			if (editTunnel) {
-				await api.updateTunnel(editTunnel.id, form);
-			} else {
-				const result = await api.createTunnel(form);
-				if (result.public_key) {
-					createdPublicKey = result.public_key;
-				}
-				if (result.preshared_key) {
-					createdPSK = result.preshared_key;
-				}
-			}
-			showForm = false;
+			await api.updateTunnel(editTunnel.id, editForm);
+			showEditForm = false;
 			await loadData();
 		} catch (e: any) {
-			formError = e.message;
+			editError = e.message;
 		}
 	}
 
@@ -112,6 +214,8 @@
 		}
 	}
 
+	const stepLabels = ['Basics', 'Keys', 'Network', 'Advanced'];
+
 	onMount(loadData);
 </script>
 
@@ -121,13 +225,22 @@
 			<h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Tunnels</h1>
 			<p class="mt-1 text-zinc-500 dark:text-zinc-400">{tunnels.length} tunnel{tunnels.length !== 1 ? 's' : ''} &middot; Each tunnel runs on a separate WireGuard interface</p>
 		</div>
-		<button
-			onclick={openCreate}
-			class="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-		>
-			<Plus size={16} />
-			Add Tunnel
-		</button>
+		<div class="flex items-center gap-2">
+			<button
+				onclick={() => openWizard('create')}
+				class="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+			>
+				<Plus size={16} />
+				Create Tunnel
+			</button>
+			<button
+				onclick={() => openWizard('accept')}
+				class="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+			>
+				<Plus size={16} />
+				Accept Tunnel
+			</button>
+		</div>
 	</div>
 
 	{#if error}
@@ -138,21 +251,25 @@
 		<div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-950">
 			<div class="flex items-start justify-between">
 				<div class="space-y-2">
-					<p class="text-sm text-amber-800 dark:text-amber-200">Tunnel created. Download the remote config from the table below, or copy these keys to configure the other server manually.</p>
+					{#if lastMode === 'accept'}
+						<p class="text-sm text-amber-800 dark:text-amber-200">Tunnel created. Copy this server's public key, then go back to the initiating server and paste it into the tunnel's Remote Public Key field.</p>
+					{:else}
+						<p class="text-sm text-amber-800 dark:text-amber-200">Tunnel created. On the remote server, click <strong>Accept Tunnel</strong> and paste the keys below.</p>
+					{/if}
 					{#if createdPublicKey}
 						<div>
-							<p class="text-xs font-medium text-amber-800 dark:text-amber-200">This tunnel's public key <span class="font-normal">&mdash; paste into the remote server's tunnel config</span></p>
+							<p class="text-xs font-medium text-amber-800 dark:text-amber-200">This tunnel's public key</p>
 							<p class="mt-0.5 font-mono text-xs text-amber-700 dark:text-amber-300 select-all">{createdPublicKey}</p>
 						</div>
 					{/if}
 					{#if createdPSK}
 						<div>
-							<p class="text-xs font-medium text-amber-800 dark:text-amber-200">Pre-shared key <span class="font-normal">&mdash; both ends must use the same key (shown once)</span></p>
+							<p class="text-xs font-medium text-amber-800 dark:text-amber-200">Pre-shared key <span class="font-normal">&mdash; shown once</span></p>
 							<p class="mt-0.5 font-mono text-xs text-amber-700 dark:text-amber-300 select-all">{createdPSK}</p>
 						</div>
 					{/if}
 				</div>
-				<button onclick={() => { createdPSK = ''; createdPublicKey = ''; }} class="ml-4 text-amber-400 hover:text-amber-600 dark:text-amber-500 dark:hover:text-amber-300">
+				<button onclick={() => { createdPSK = ''; createdPublicKey = ''; lastMode = null; }} class="ml-4 text-amber-400 hover:text-amber-600 dark:text-amber-500 dark:hover:text-amber-300">
 					<X size={16} />
 				</button>
 			</div>
@@ -237,95 +354,265 @@
 	{/if}
 </div>
 
-<!-- Create/Edit Tunnel Modal -->
-{#if showForm}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60" onclick={() => (showForm = false)}>
+<!-- Wizard Modal -->
+{#if showWizard}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60" onclick={() => (showWizard = false)}>
 		<div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl dark:bg-zinc-900" onclick={(e) => e.stopPropagation()}>
+			<!-- Header -->
 			<div class="flex items-center justify-between">
-				<h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{editTunnel ? 'Edit' : 'Create'} Tunnel</h2>
-				<button onclick={() => (showForm = false)} class="text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"><X size={20} /></button>
+				<h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{tunnelMode === 'accept' ? 'Accept' : 'Create'} Tunnel</h2>
+				<button onclick={() => (showWizard = false)} class="text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"><X size={20} /></button>
 			</div>
-			{#if formError}
-				<div class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">{formError}</div>
+
+			<!-- Step indicator -->
+			<div class="mt-4 flex items-center gap-1">
+				{#each stepLabels as label, i}
+					<div class="flex items-center gap-1 {i > 0 ? 'ml-1' : ''}">
+						{#if i > 0}
+							<div class="h-px w-4 {i < wizardStep ? 'bg-zinc-900 dark:bg-zinc-100' : 'bg-zinc-200 dark:bg-zinc-700'}"></div>
+						{/if}
+						<span class="text-xs font-medium {i + 1 === wizardStep ? 'text-zinc-900 dark:text-zinc-100' : i + 1 < wizardStep ? 'text-zinc-500 dark:text-zinc-400' : 'text-zinc-300 dark:text-zinc-600'}">{i + 1}. {label}</span>
+					</div>
+				{/each}
+			</div>
+
+			{#if wizardError}
+				<div class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">{wizardError}</div>
 			{/if}
-			<form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }} class="mt-4 space-y-4">
-				<div class="grid grid-cols-2 gap-4">
+
+			<div class="mt-4 space-y-4">
+				<!-- Step 1: Basics -->
+				{#if wizardStep === 1}
 					<div>
-						<label for="t-name" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Name <Tooltip text="A friendly name for this tunnel connection" /></label>
-						<input id="t-name" type="text" required bind:value={form.name}
+						<label for="w-name" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Name <Tooltip text="A friendly name for this tunnel connection" /></label>
+						<input id="w-name" type="text" bind:value={form.name} placeholder="e.g., office-to-datacenter"
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
 					<div>
-						<label for="t-addr" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">VPN Address <Tooltip text="Point-to-point address for this end of the tunnel. Use a /30 subnet — the remote end gets the other IP automatically (e.g., .1 here → .2 there)" /></label>
-						<input id="t-addr" type="text" required placeholder="10.100.0.1/30" bind:value={form.address}
+						<label for="w-desc" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Description <Tooltip text="Optional note to help identify this tunnel's purpose" /></label>
+						<input id="w-desc" type="text" bind:value={form.description}
+							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+					</div>
+					<div>
+						<label for="w-ep" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Remote Endpoint <Tooltip text="The remote server's address in host:port format (e.g., vpn.example.com:51820). Can be added later." /></label>
+						<input id="w-ep" type="text" placeholder="host:port" bind:value={form.peer_endpoint}
+							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+					</div>
+
+				<!-- Step 2: Key Exchange -->
+				{:else if wizardStep === 2}
+					{#if tunnelMode === 'create'}
+						<div class="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+							<p class="text-xs text-zinc-500 dark:text-zinc-400">Copy these keys and paste them into the <strong>Accept Tunnel</strong> wizard on the remote server.</p>
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">This Tunnel's Public Key</label>
+							<div class="mt-1 flex items-center gap-2">
+								<input type="text" readonly value={generatedKeys.publicKey}
+									class="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-mono text-zinc-600 select-all focus:outline-none dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-400" />
+								<button type="button" onclick={() => copyToClipboard(generatedKeys.publicKey, 'pubkey')} class="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-300">
+									{#if copiedField === 'pubkey'}<Check size={16} class="text-emerald-500" />{:else}<Copy size={16} />{/if}
+								</button>
+							</div>
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Pre-Shared Key <span class="font-normal text-zinc-400">&mdash; both servers must use the same key</span></label>
+							<div class="mt-1 flex items-center gap-2">
+								<input type="text" readonly value={generatedPSK}
+									class="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-mono text-zinc-600 select-all focus:outline-none dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-400" />
+								<button type="button" onclick={() => copyToClipboard(generatedPSK, 'psk')} class="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-300">
+									{#if copiedField === 'psk'}<Check size={16} class="text-emerald-500" />{:else}<Copy size={16} />{/if}
+								</button>
+							</div>
+						</div>
+						<div>
+							<label for="w-rpk" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Remote Public Key <span class="text-zinc-400 font-normal">(optional &mdash; add after accept)</span></label>
+							<input id="w-rpk" type="text" placeholder="Paste after running Accept Tunnel on the remote" bind:value={form.peer_public_key}
+								class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+						</div>
+					{:else}
+						<!-- Accept mode -->
+						<div class="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+							<p class="text-xs text-zinc-500 dark:text-zinc-400">Paste the public key and pre-shared key from the <strong>Create Tunnel</strong> wizard on the remote server.</p>
+						</div>
+						<div>
+							<label for="w-rpk" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Remote Public Key <span class="text-red-500">*</span></label>
+							<input id="w-rpk" type="text" placeholder="Paste the public key from the creating server" bind:value={form.peer_public_key}
+								class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+						</div>
+						<div>
+							<label for="w-psk" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Pre-Shared Key <span class="text-red-500">*</span></label>
+							<input id="w-psk" type="text" placeholder="Paste the PSK from the creating server" bind:value={form.preshared_key}
+								class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">This Tunnel's Public Key <span class="font-normal text-zinc-400">&mdash; copy back to the creating server</span></label>
+							<div class="mt-1 flex items-center gap-2">
+								<input type="text" readonly value={generatedKeys.publicKey}
+									class="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-mono text-zinc-600 select-all focus:outline-none dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-400" />
+								<button type="button" onclick={() => copyToClipboard(generatedKeys.publicKey, 'pubkey')} class="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-300">
+									{#if copiedField === 'pubkey'}<Check size={16} class="text-emerald-500" />{:else}<Copy size={16} />{/if}
+								</button>
+							</div>
+						</div>
+					{/if}
+
+				<!-- Step 3: Network -->
+				{:else if wizardStep === 3}
+					<div>
+						<label for="w-addr" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">VPN Address <Tooltip text="Point-to-point address for this end of the tunnel. Auto-allocated from the tunnel subnet range in server settings." /></label>
+						<input id="w-addr" type="text" bind:value={form.address}
+							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+					</div>
+					<div>
+						<label for="w-aips" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Advertise CIDRs <Tooltip text="Subnets on this server that should be reachable through the tunnel. Defaults to this server's VPN subnet." /></label>
+						<input id="w-aips" type="text" placeholder="10.0.0.0/24" bind:value={form.peer_allowed_ips}
+							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+					</div>
+
+				<!-- Step 4: Advanced -->
+				{:else if wizardStep === 4}
+					<div class="grid grid-cols-2 gap-4">
+						<div>
+							<label for="w-port" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Listen Port <Tooltip text="Local UDP port. Use 0 for ephemeral (recommended for outbound-only)" /></label>
+							<input id="w-port" type="number" min="0" max="65535" bind:value={form.listen_port}
+								class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+						</div>
+						<div>
+							<label for="w-mtu" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">MTU <Tooltip text="Maximum packet size. Default 1420." /></label>
+							<input id="w-mtu" type="number" min="1280" max="9000" bind:value={form.mtu}
+								class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+						</div>
+					</div>
+					<div class="grid grid-cols-2 gap-4">
+						<div>
+							<label for="w-ka" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Keepalive (s) <Tooltip text="25s recommended. 0 disables." /></label>
+							<input id="w-ka" type="number" min="0" bind:value={form.persistent_keepalive}
+								class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+						</div>
+						<div>
+							<label for="w-dns" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">DNS <Tooltip text="DNS for the remote network. Usually leave blank." /></label>
+							<input id="w-dns" type="text" placeholder="Optional" bind:value={form.dns}
+								class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+						</div>
+					</div>
+				{/if}
+			</div>
+
+			<!-- Navigation -->
+			<div class="mt-6 flex items-center justify-between">
+				<div>
+					{#if wizardStep > 1}
+						<button type="button" onclick={prevStep}
+							class="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
+							<ChevronLeft size={16} /> Back
+						</button>
+					{/if}
+				</div>
+				<div class="flex items-center gap-3">
+					<button type="button" onclick={() => (showWizard = false)}
+						class="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">Cancel</button>
+					{#if wizardStep < 4}
+						<button type="button" onclick={nextStep}
+							class="inline-flex items-center gap-1 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">
+							Next <ChevronRight size={16} />
+						</button>
+					{:else}
+						<button type="button" onclick={finishWizard}
+							class="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">
+							{tunnelMode === 'accept' ? 'Accept' : 'Create'} Tunnel
+						</button>
+					{/if}
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Edit Tunnel Modal -->
+{#if showEditForm && editTunnel}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60" onclick={() => (showEditForm = false)}>
+		<div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl dark:bg-zinc-900" onclick={(e) => e.stopPropagation()}>
+			<div class="flex items-center justify-between">
+				<h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Edit Tunnel</h2>
+				<button onclick={() => (showEditForm = false)} class="text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"><X size={20} /></button>
+			</div>
+			{#if editError}
+				<div class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">{editError}</div>
+			{/if}
+			<form onsubmit={(e) => { e.preventDefault(); handleEditSubmit(); }} class="mt-4 space-y-4">
+				<div class="grid grid-cols-2 gap-4">
+					<div>
+						<label for="e-name" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Name</label>
+						<input id="e-name" type="text" required bind:value={editForm.name}
+							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+					</div>
+					<div>
+						<label for="e-addr" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">VPN Address</label>
+						<input id="e-addr" type="text" required bind:value={editForm.address}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
 				</div>
 				<div>
-					<label for="t-desc" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Description <Tooltip text="Optional note to help identify this tunnel's purpose" /></label>
-					<input id="t-desc" type="text" bind:value={form.description}
+					<label for="e-desc" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Description</label>
+					<input id="e-desc" type="text" bind:value={editForm.description}
 						class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 				</div>
-
 				<div class="border-t border-zinc-100 pt-4 dark:border-zinc-800">
 					<h3 class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Remote Peer</h3>
 				</div>
-				{#if editTunnel}
-					<div>
-						<label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">This Tunnel's Public Key <Tooltip text="Give this key to the remote server so it can authenticate this tunnel" /></label>
-						<input type="text" readonly value={editTunnel.public_key}
-							class="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-mono text-zinc-500 select-all focus:outline-none dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-400" />
-					</div>
-				{/if}
 				<div>
-					<label for="t-peer-pk" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Public Key <Tooltip text="The WireGuard public key of the remote server. Get this from the remote server's tunnel config, or set up the remote end first using the downloaded config" /></label>
-					<input id="t-peer-pk" type="text" placeholder="Remote server's public key" bind:value={form.peer_public_key}
+					<label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">This Tunnel's Public Key</label>
+					<input type="text" readonly value={editTunnel.public_key}
+						class="mt-1 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-mono text-zinc-500 select-all focus:outline-none dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-400" />
+				</div>
+				<div>
+					<label for="e-peer-pk" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Remote Public Key</label>
+					<input id="e-peer-pk" type="text" bind:value={editForm.peer_public_key}
 						class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 				</div>
 				<div class="grid grid-cols-2 gap-4">
 					<div>
-						<label for="t-peer-ep" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Endpoint <Tooltip text="The remote server's address in host:port format (e.g., vpn.example.com:51820)" /></label>
-						<input id="t-peer-ep" type="text" placeholder="host:port" bind:value={form.peer_endpoint}
+						<label for="e-peer-ep" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Endpoint</label>
+						<input id="e-peer-ep" type="text" placeholder="host:port" bind:value={editForm.peer_endpoint}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
 					<div>
-						<label for="t-peer-ips" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Allowed IPs (remote subnets) <Tooltip text="Comma-separated CIDR subnets routed through this tunnel (e.g., 10.1.0.0/24)" /></label>
-						<input id="t-peer-ips" type="text" placeholder="10.1.0.0/24, 10.2.0.0/24" bind:value={form.peer_allowed_ips}
+						<label for="e-peer-ips" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Allowed IPs</label>
+						<input id="e-peer-ips" type="text" bind:value={editForm.peer_allowed_ips}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-mono focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
 				</div>
-
 				<div class="border-t border-zinc-100 pt-4 dark:border-zinc-800">
 					<h3 class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Advanced</h3>
 				</div>
 				<div class="grid grid-cols-3 gap-4">
 					<div>
-						<label for="t-port" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Listen Port <Tooltip text="Local UDP port for WireGuard to bind to. Use 0 for an ephemeral port (recommended for outbound-only tunnels)" /></label>
-						<input id="t-port" type="number" min="0" max="65535" bind:value={form.listen_port}
+						<label for="e-port" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Listen Port</label>
+						<input id="e-port" type="number" min="0" max="65535" bind:value={editForm.listen_port}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
 					<div>
-						<label for="t-mtu" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">MTU <Tooltip text="Maximum packet size in bytes. Default 1420 accounts for WireGuard overhead. Lower if you experience connectivity issues" /></label>
-						<input id="t-mtu" type="number" min="1280" max="9000" bind:value={form.mtu}
+						<label for="e-mtu" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">MTU</label>
+						<input id="e-mtu" type="number" min="1280" max="9000" bind:value={editForm.mtu}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
 					<div>
-						<label for="t-ka" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Keepalive (s) <Tooltip text="Seconds between keepalive packets. Keeps NAT mappings alive for peers behind firewalls. 25s is recommended; 0 disables" /></label>
-						<input id="t-ka" type="number" min="0" bind:value={form.persistent_keepalive}
+						<label for="e-ka" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Keepalive (s)</label>
+						<input id="e-ka" type="number" min="0" bind:value={editForm.persistent_keepalive}
 							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 					</div>
 				</div>
 				<div>
-					<label for="t-dns" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">DNS <Tooltip text="DNS servers for resolving hostnames on the remote network. Leave blank unless the remote side has internal DNS you need to reach" /></label>
-					<input id="t-dns" type="text" placeholder="Optional" bind:value={form.dns}
+					<label for="e-dns" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">DNS</label>
+					<input id="e-dns" type="text" placeholder="Optional" bind:value={editForm.dns}
 						class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 				</div>
-
 				<div class="flex justify-end gap-3 pt-2">
-					<button type="button" onclick={() => (showForm = false)}
+					<button type="button" onclick={() => (showEditForm = false)}
 						class="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">Cancel</button>
 					<button type="submit"
-						class="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">{editTunnel ? 'Save' : 'Create'}</button>
+						class="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">Save</button>
 				</div>
 			</form>
 		</div>
