@@ -183,11 +183,13 @@ func (s *mockStore) RevokeUserSessions(_ context.Context, _ string) error { retu
 func (s *mockStore) CleanExpiredSessions(_ context.Context) error         { return nil }
 func (s *mockStore) DeleteExpiredAPITokens(_ context.Context) error       { return nil }
 
-func (s *mockStore) ListTunnels(_ context.Context) ([]domain.Tunnel, error)       { return nil, nil }
-func (s *mockStore) GetTunnel(_ context.Context, _ string) (*domain.Tunnel, error) { return nil, nil }
-func (s *mockStore) CreateTunnel(_ context.Context, _ *domain.Tunnel) error       { return nil }
-func (s *mockStore) UpdateTunnel(_ context.Context, _ *domain.Tunnel) error       { return nil }
-func (s *mockStore) DeleteTunnel(_ context.Context, _ string) error               { return nil }
+func (s *mockStore) ListTunnels(_ context.Context) ([]domain.Tunnel, error)            { return nil, nil }
+func (s *mockStore) ListEnabledTunnels(_ context.Context) ([]domain.Tunnel, error)    { return nil, nil }
+func (s *mockStore) GetTunnel(_ context.Context, _ string) (*domain.Tunnel, error)    { return nil, nil }
+func (s *mockStore) GetTunnelByName(_ context.Context, _ string) (*domain.Tunnel, error) { return nil, nil }
+func (s *mockStore) CreateTunnel(_ context.Context, _ *domain.Tunnel) error           { return nil }
+func (s *mockStore) UpdateTunnel(_ context.Context, _ *domain.Tunnel) error           { return nil }
+func (s *mockStore) DeleteTunnel(_ context.Context, _ string) error                   { return nil }
 
 func (s *mockStore) HasEncryptedData(_ context.Context) (bool, error) { return false, nil }
 func (s *mockStore) Migrate(_ context.Context) error                  { return nil }

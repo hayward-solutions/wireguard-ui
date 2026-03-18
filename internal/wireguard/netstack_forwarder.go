@@ -28,12 +28,13 @@ const (
 // If tunnel dialers are registered, traffic matching a tunnel's subnets is routed through
 // the tunnel's gVisor stack instead of the host network.
 type netstackForwarder struct {
-	ctx       context.Context
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
-	localAddr string             // the server's VPN address (e.g., "10.0.0.1")
-	acl       *acl.PolicyEngine  // nil means allow-all (backwards compatible)
-	tunnels   tunnelDialerRegistry
+	ctx        context.Context
+	cancel     context.CancelFunc
+	wg         sync.WaitGroup
+	localAddr  string             // the server's VPN address (e.g., "10.0.0.1")
+	forwardAll bool               // if true, rewrite ALL destinations to 127.0.0.1 (tunnel mode)
+	acl        *acl.PolicyEngine  // nil means allow-all (backwards compatible)
+	tunnels    tunnelDialerRegistry
 }
 
 // startForwarder registers TCP and UDP forwarding handlers on the gVisor stack
@@ -66,9 +67,12 @@ func (f *netstackForwarder) stop() {
 
 // resolveHostAddr rewrites the destination address so that traffic destined for the
 // server's own VPN IP is sent to 127.0.0.1 instead (the VPN IP only exists in gVisor).
+// In forwardAll mode (tunnel interfaces), ALL destinations are rewritten to 127.0.0.1
+// because the tunnel's gVisor stack is purely a transport layer — traffic arriving on
+// it is destined for services on the local host.
 func (f *netstackForwarder) resolveHostAddr(gvisorIP string, port int) string {
 	host := gvisorIP
-	if host == f.localAddr {
+	if f.forwardAll || host == f.localAddr {
 		host = "127.0.0.1"
 	}
 	return net.JoinHostPort(host, strconv.Itoa(port))

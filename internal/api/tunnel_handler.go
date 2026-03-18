@@ -6,7 +6,10 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -14,6 +17,80 @@ import (
 	"github.com/hayward-solutions/wireguard-ui/internal/domain"
 	"github.com/hayward-solutions/wireguard-ui/internal/wireguard"
 )
+
+var tunnelNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$`)
+
+// validateTunnelName checks that the name is safe and reasonable.
+func validateTunnelName(name string) error {
+	if name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if !tunnelNameRegexp.MatchString(name) {
+		return fmt.Errorf("name must be 1-63 characters, alphanumeric, hyphens, or underscores, starting with an alphanumeric")
+	}
+	return nil
+}
+
+// validateCIDRList validates a comma-separated list of CIDR notations.
+func validateCIDRList(s, fieldName string) error {
+	if s == "" {
+		return nil
+	}
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if _, err := netip.ParsePrefix(part); err != nil {
+			return fmt.Errorf("%s: invalid CIDR %q: %w", fieldName, part, err)
+		}
+	}
+	return nil
+}
+
+// validateEndpoint validates a host:port endpoint string.
+func validateEndpoint(s string) error {
+	if s == "" {
+		return nil
+	}
+	host, port, err := net.SplitHostPort(s)
+	if err != nil {
+		return fmt.Errorf("peer_endpoint: invalid host:port format: %w", err)
+	}
+	if host == "" {
+		return fmt.Errorf("peer_endpoint: host cannot be empty")
+	}
+	p, err := strconv.Atoi(port)
+	if err != nil || p < 1 || p > 65535 {
+		return fmt.Errorf("peer_endpoint: port must be 1-65535")
+	}
+	return nil
+}
+
+// validateListenPort validates a listen port value.
+func validateListenPort(port int) error {
+	if port < 0 || port > 65535 {
+		return fmt.Errorf("listen_port must be 0-65535")
+	}
+	return nil
+}
+
+// validateDNS validates a comma-separated list of DNS IPs.
+func validateDNS(s string) error {
+	if s == "" {
+		return nil
+	}
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if _, err := netip.ParseAddr(part); err != nil {
+			return fmt.Errorf("dns: invalid IP address %q: %w", part, err)
+		}
+	}
+	return nil
+}
 
 type TunnelHandler struct {
 	store     database.Store
@@ -77,6 +154,7 @@ func (h *TunnelHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		MTU                 int    `json:"mtu"`
 		PeerPublicKey       string `json:"peer_public_key"`
 		PeerEndpoint        string `json:"peer_endpoint"`
+		PresharedKey        string `json:"preshared_key"`
 		PeerAllowedIPs      string `json:"peer_allowed_ips"`
 		PersistentKeepalive int    `json:"persistent_keepalive"`
 	}
@@ -85,8 +163,28 @@ func (h *TunnelHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "name is required")
+	if err := validateTunnelName(req.Name); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+	if err := validateCIDRList(req.Address, "address"); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+	if err := validateListenPort(req.ListenPort); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+	if err := validateDNS(req.DNS); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+	if err := validateEndpoint(req.PeerEndpoint); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+	if err := validateCIDRList(req.PeerAllowedIPs, "peer_allowed_ips"); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
 
@@ -98,9 +196,17 @@ func (h *TunnelHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	psk := ""
-	if pskKey, err := wireguard.GeneratePresharedKey(); err == nil {
-		psk = pskKey
+	// Use provided PSK (for tunnel peering where both sides need the same key),
+	// or generate a new one.
+	psk := req.PresharedKey
+	if psk == "" {
+		var err error
+		psk, err = wireguard.GeneratePresharedKey()
+		if err != nil {
+			slog.Error("generate tunnel preshared key", "error", err)
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to generate preshared key")
+			return
+		}
 	}
 
 	address := req.Address
@@ -192,18 +298,34 @@ func (h *TunnelHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Name != nil {
+		if err := validateTunnelName(*req.Name); err != nil {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+			return
+		}
 		tunnel.Name = *req.Name
 	}
 	if req.Description != nil {
 		tunnel.Description = *req.Description
 	}
 	if req.Address != nil {
+		if err := validateCIDRList(*req.Address, "address"); err != nil {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+			return
+		}
 		tunnel.Address = *req.Address
 	}
 	if req.ListenPort != nil {
+		if err := validateListenPort(*req.ListenPort); err != nil {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+			return
+		}
 		tunnel.ListenPort = *req.ListenPort
 	}
 	if req.DNS != nil {
+		if err := validateDNS(*req.DNS); err != nil {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+			return
+		}
 		tunnel.DNS = *req.DNS
 	}
 	if req.MTU != nil {
@@ -213,9 +335,17 @@ func (h *TunnelHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		tunnel.PeerPublicKey = *req.PeerPublicKey
 	}
 	if req.PeerEndpoint != nil {
+		if err := validateEndpoint(*req.PeerEndpoint); err != nil {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+			return
+		}
 		tunnel.PeerEndpoint = *req.PeerEndpoint
 	}
 	if req.PeerAllowedIPs != nil {
+		if err := validateCIDRList(*req.PeerAllowedIPs, "peer_allowed_ips"); err != nil {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+			return
+		}
 		tunnel.PeerAllowedIPs = *req.PeerAllowedIPs
 	}
 	if req.PersistentKeepalive != nil {
@@ -231,11 +361,14 @@ func (h *TunnelHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	slog.Warn("audit", "action", "tunnel_updated", "actor", actorFromRequest(r),
 		"target_id", tunnel.ID, "target_name", tunnel.Name)
 
-	// Restart if running
-	if h.tunnelMgr.IsRunning(tunnel.ID) && tunnel.Enabled {
+	// Restart if enabled (RestartTunnel is safe to call even if not currently running)
+	if tunnel.Enabled && tunnel.PeerPublicKey != "" {
 		if err := h.tunnelMgr.RestartTunnel(tunnel); err != nil {
 			slog.Error("failed to restart tunnel after update", "error", err)
 		}
+	} else {
+		// Stop if running but now disabled or has no peer
+		h.tunnelMgr.StopTunnel(tunnel.ID)
 	}
 
 	writeJSON(w, http.StatusOK, tunnel)

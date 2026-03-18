@@ -3,6 +3,7 @@ package wireguard
 import (
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"strings"
 	"sync"
 
@@ -91,10 +92,14 @@ func (tm *TunnelManager) StartTunnel(t *domain.Tunnel) error {
 		manager:       mgr,
 		interfaceName: ifName,
 	}
-	tm.tunnels[t.ID] = inst
 
 	// Set up routing from the main interface to this tunnel
-	tm.applyRouting(t, inst)
+	if err := tm.applyRouting(t, inst); err != nil {
+		mgr.Close()
+		return fmt.Errorf("apply routing for tunnel %s: %w", t.Name, err)
+	}
+
+	tm.tunnels[t.ID] = inst
 
 	slog.Info("tunnel started", "name", t.Name, "id", t.ID, "mode", tm.mode, "iface", ifName)
 	return nil
@@ -134,6 +139,11 @@ func (tm *TunnelManager) RestartTunnel(t *domain.Tunnel) error {
 func (tm *TunnelManager) GetTunnelStatus(id string) (*domain.TunnelStatus, error) {
 	tm.mu.Lock()
 	inst, ok := tm.tunnels[id]
+	// Copy the manager reference under lock so we can safely call GetStats after unlock.
+	var mgr Manager
+	if ok {
+		mgr = inst.manager
+	}
 	tm.mu.Unlock()
 
 	status := &domain.TunnelStatus{TunnelID: id}
@@ -141,7 +151,7 @@ func (tm *TunnelManager) GetTunnelStatus(id string) (*domain.TunnelStatus, error
 		return status, nil
 	}
 
-	stats, err := inst.manager.GetStats()
+	stats, err := mgr.GetStats()
 	if err != nil {
 		return status, fmt.Errorf("get stats for tunnel %s: %w", id, err)
 	}
@@ -208,7 +218,9 @@ func (tm *TunnelManager) Close() error {
 func (tm *TunnelManager) createManager(t *domain.Tunnel) (Manager, string, error) {
 	switch tm.mode {
 	case TunnelModeNetstack:
-		return NewNetstackManager(), "", nil
+		nm := NewNetstackManager()
+		nm.SetForwardAll(true) // tunnel interfaces forward all traffic to localhost
+		return nm, "", nil
 	case TunnelModeUserspace:
 		ifName := tunnelInterfaceName(t.ID)
 		mgr, err := NewUserspaceManager(ifName)
@@ -225,9 +237,9 @@ func (tm *TunnelManager) createManager(t *domain.Tunnel) (Manager, string, error
 }
 
 // applyRouting sets up traffic routing from the main interface to this tunnel.
-func (tm *TunnelManager) applyRouting(t *domain.Tunnel, inst *tunnelInstance) {
+func (tm *TunnelManager) applyRouting(t *domain.Tunnel, inst *tunnelInstance) error {
 	if t.PeerAllowedIPs == "" {
-		return
+		return nil
 	}
 	subnets := splitSubnets(t.PeerAllowedIPs)
 
@@ -235,18 +247,22 @@ func (tm *TunnelManager) applyRouting(t *domain.Tunnel, inst *tunnelInstance) {
 	case TunnelModeUserspace, TunnelModeKernel:
 		if inst.interfaceName != "" && tm.mainInterfaceName != "" {
 			if err := ApplyTunnelRoutes(tm.mainInterfaceName, inst.interfaceName, subnets); err != nil {
-				slog.Error("failed to apply tunnel routes", "tunnel", t.Name, "error", err)
+				return fmt.Errorf("apply tunnel routes: %w", err)
 			}
 		}
 	case TunnelModeNetstack:
 		if tm.mainNetstack != nil {
 			nm, ok := inst.manager.(*NetstackManager)
-			if ok {
+			if !ok {
+				slog.Warn("tunnel manager is not NetstackManager, cannot register tunnel dialer",
+					"tunnel", t.Name, "manager_type", fmt.Sprintf("%T", inst.manager))
+			} else {
 				dialer := newNetstackTunnelDialer(t.ID, nm, t.PeerAllowedIPs)
 				tm.mainNetstack.RegisterTunnelDialer(dialer)
 			}
 		}
 	}
+	return nil
 }
 
 // removeRouting tears down traffic routing for a tunnel.
@@ -315,13 +331,30 @@ func tunnelToRemotePeer(t *domain.Tunnel) *domain.Peer {
 	if keepalive == 0 {
 		keepalive = 25
 	}
+
+	// Build AllowedIPs: include the configured peer subnets plus the tunnel's own
+	// address subnet. The tunnel address subnet (e.g., 10.100.0.0/30) must be included
+	// so that return traffic from the tunnel's local IP is allowed back through WireGuard.
+	allowedIPs := t.PeerAllowedIPs
+	if t.Address != "" {
+		prefix, err := netip.ParsePrefix(t.Address)
+		if err == nil {
+			tunnelSubnet := netip.PrefixFrom(prefix.Masked().Addr(), prefix.Bits()).String()
+			if allowedIPs != "" {
+				allowedIPs += ", " + tunnelSubnet
+			} else {
+				allowedIPs = tunnelSubnet
+			}
+		}
+	}
+
 	return &domain.Peer{
 		ID:                  "tunnel-peer-" + t.ID,
 		Name:                t.Name + " (remote)",
 		PublicKey:           t.PeerPublicKey,
 		PresharedKey:        t.PresharedKey,
-		Address:             t.PeerAllowedIPs, // AllowedIPs for this peer on the interface
-		Endpoint:            t.PeerEndpoint,   // Remote server endpoint (host:port)
+		Address:             allowedIPs,
+		Endpoint:            t.PeerEndpoint,
 		PersistentKeepalive: keepalive,
 		Enabled:             true,
 	}

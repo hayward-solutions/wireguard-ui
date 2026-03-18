@@ -3,6 +3,7 @@ package wireguard
 import (
 	"encoding/hex"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -10,6 +11,31 @@ import (
 	"github.com/hayward-solutions/wireguard-ui/internal/domain"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
+
+// resolveEndpoint resolves a hostname:port endpoint to ip:port format.
+// WireGuard's IPC protocol requires IP addresses, not hostnames.
+func resolveEndpoint(endpoint string) (string, error) {
+	host, port, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		return endpoint, nil // not host:port format, return as-is
+	}
+
+	// If host is already an IP, return as-is
+	if net.ParseIP(host) != nil {
+		return endpoint, nil
+	}
+
+	// Resolve hostname to IP
+	ips, err := net.LookupHost(host)
+	if err != nil {
+		return "", fmt.Errorf("failed to set endpoint %s: %w", endpoint, err)
+	}
+	if len(ips) == 0 {
+		return "", fmt.Errorf("failed to set endpoint %s: no addresses found", endpoint)
+	}
+
+	return net.JoinHostPort(ips[0], port), nil
+}
 
 // keyToHex converts a base64-encoded WireGuard key to the hex format used by the IPC protocol.
 func keyToHex(base64Key string) (string, error) {
@@ -44,7 +70,11 @@ func buildIpcPeer(p *domain.Peer) (string, error) {
 	fmt.Fprintf(&b, "public_key=%s\n", hexPub)
 
 	if p.Endpoint != "" {
-		fmt.Fprintf(&b, "endpoint=%s\n", p.Endpoint)
+		resolved, err := resolveEndpoint(p.Endpoint)
+		if err != nil {
+			return "", fmt.Errorf("resolve endpoint: %w", err)
+		}
+		fmt.Fprintf(&b, "endpoint=%s\n", resolved)
 	}
 
 	if p.PresharedKey != "" {

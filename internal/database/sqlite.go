@@ -922,12 +922,40 @@ func scanTunnel(row interface{ Scan(dest ...any) error }) (*domain.Tunnel, error
 	return &t, err
 }
 
-func (s *SQLiteStore) listTunnelsWhere(ctx context.Context, where string, args ...any) ([]domain.Tunnel, error) {
-	query := `SELECT ` + tunnelColumns + ` FROM tunnels`
-	if where != "" {
-		query += ` WHERE ` + where
+func (s *SQLiteStore) decryptTunnel(t *domain.Tunnel) error {
+	var err error
+	t.PrivateKey, err = s.encryptor.Decrypt(t.PrivateKey)
+	if err != nil {
+		return fmt.Errorf("decrypt tunnel private key: %w", err)
 	}
-	query += ` ORDER BY created_at DESC`
+	t.PresharedKey, err = s.encryptor.Decrypt(t.PresharedKey)
+	if err != nil {
+		return fmt.Errorf("decrypt tunnel preshared key: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) encryptTunnelKeys(t *domain.Tunnel) (encPrivKey, encPSK string, err error) {
+	encPrivKey, err = s.encryptor.Encrypt(t.PrivateKey)
+	if err != nil {
+		return "", "", fmt.Errorf("encrypt tunnel private key: %w", err)
+	}
+	encPSK, err = s.encryptor.Encrypt(t.PresharedKey)
+	if err != nil {
+		return "", "", fmt.Errorf("encrypt tunnel preshared key: %w", err)
+	}
+	return encPrivKey, encPSK, nil
+}
+
+// listTunnelsWhere queries tunnels with an optional static WHERE clause.
+// IMPORTANT: the where parameter must only contain hardcoded strings, never user input.
+func (s *SQLiteStore) listTunnelsWhere(ctx context.Context, where string, args ...any) ([]domain.Tunnel, error) {
+	var query string
+	if where != "" {
+		query = `SELECT ` + tunnelColumns + ` FROM tunnels WHERE ` + where + ` ORDER BY created_at DESC`
+	} else {
+		query = `SELECT ` + tunnelColumns + ` FROM tunnels ORDER BY created_at DESC`
+	}
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -940,6 +968,9 @@ func (s *SQLiteStore) listTunnelsWhere(ctx context.Context, where string, args .
 		t, err := scanTunnel(rows)
 		if err != nil {
 			return nil, fmt.Errorf("scan tunnel: %w", err)
+		}
+		if err := s.decryptTunnel(t); err != nil {
+			return nil, err
 		}
 		tunnels = append(tunnels, *t)
 	}
@@ -965,6 +996,9 @@ func (s *SQLiteStore) GetTunnel(ctx context.Context, id string) (*domain.Tunnel,
 	if err != nil {
 		return nil, fmt.Errorf("get tunnel: %w", err)
 	}
+	if err := s.decryptTunnel(t); err != nil {
+		return nil, err
+	}
 	return t, nil
 }
 
@@ -979,6 +1013,9 @@ func (s *SQLiteStore) GetTunnelByName(ctx context.Context, name string) (*domain
 	if err != nil {
 		return nil, fmt.Errorf("get tunnel by name: %w", err)
 	}
+	if err := s.decryptTunnel(t); err != nil {
+		return nil, err
+	}
 	return t, nil
 }
 
@@ -986,12 +1023,18 @@ func (s *SQLiteStore) CreateTunnel(ctx context.Context, t *domain.Tunnel) error 
 	now := time.Now()
 	t.CreatedAt = now
 	t.UpdatedAt = now
-	_, err := s.db.ExecContext(ctx, `
+
+	encPrivKey, encPSK, err := s.encryptTunnelKeys(t)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO tunnels (`+tunnelColumns+`)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		t.ID, t.Name, t.Description, t.PrivateKey, t.PublicKey,
+		t.ID, t.Name, t.Description, encPrivKey, t.PublicKey,
 		t.Address, t.ListenPort, t.DNS, t.MTU, t.PeerPublicKey, t.PeerEndpoint,
-		t.PresharedKey, t.PeerAllowedIPs, t.PersistentKeepalive, t.Enabled,
+		encPSK, t.PeerAllowedIPs, t.PersistentKeepalive, t.Enabled,
 		t.CreatedAt, t.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("create tunnel: %w", err)
@@ -1001,16 +1044,22 @@ func (s *SQLiteStore) CreateTunnel(ctx context.Context, t *domain.Tunnel) error 
 
 func (s *SQLiteStore) UpdateTunnel(ctx context.Context, t *domain.Tunnel) error {
 	t.UpdatedAt = time.Now()
-	_, err := s.db.ExecContext(ctx, `
+
+	encPrivKey, encPSK, err := s.encryptTunnelKeys(t)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.ExecContext(ctx, `
 		UPDATE tunnels SET name = ?, description = ?, private_key = ?, public_key = ?,
 		       address = ?, listen_port = ?, dns = ?, mtu = ?,
 		       peer_public_key = ?, peer_endpoint = ?, preshared_key = ?,
 		       peer_allowed_ips = ?, persistent_keepalive = ?,
 		       enabled = ?, updated_at = ?
 		WHERE id = ?`,
-		t.Name, t.Description, t.PrivateKey, t.PublicKey,
+		t.Name, t.Description, encPrivKey, t.PublicKey,
 		t.Address, t.ListenPort, t.DNS, t.MTU,
-		t.PeerPublicKey, t.PeerEndpoint, t.PresharedKey,
+		t.PeerPublicKey, t.PeerEndpoint, encPSK,
 		t.PeerAllowedIPs, t.PersistentKeepalive,
 		t.Enabled, t.UpdatedAt, t.ID)
 	if err != nil {

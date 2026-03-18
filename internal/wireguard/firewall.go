@@ -60,6 +60,7 @@ func ApplyFirewallRules(cfg *domain.FirewallConfig, serverAddress, interfaceName
 }
 
 // RemoveFirewallRules removes the structured iptables rules.
+// Best-effort: logs and collects individual failures but attempts all removals.
 func RemoveFirewallRules(cfg *domain.FirewallConfig, serverAddress, interfaceName string) error {
 	if cfg == nil {
 		return nil
@@ -74,9 +75,12 @@ func RemoveFirewallRules(cfg *domain.FirewallConfig, serverAddress, interfaceNam
 		outIface = "eth+"
 	}
 
+	var errs []string
+
 	if cfg.EnableNAT {
 		if err := iptablesCmd("-t", "nat", "-D", "POSTROUTING", "-s", source, "-o", outIface, "-j", "MASQUERADE"); err != nil {
 			slog.Warn("failed to remove NAT masquerade rule", "error", err)
+			errs = append(errs, err.Error())
 		}
 	}
 
@@ -84,13 +88,16 @@ func RemoveFirewallRules(cfg *domain.FirewallConfig, serverAddress, interfaceNam
 		if !cfg.AllowPeerToPeer {
 			if err := iptablesCmd("-D", "FORWARD", "-i", interfaceName, "-o", interfaceName, "-j", "DROP"); err != nil {
 				slog.Warn("failed to remove peer-isolation rule", "error", err)
+				errs = append(errs, err.Error())
 			}
 		}
 		if err := iptablesCmd("-D", "FORWARD", "-i", interfaceName, "-j", "ACCEPT"); err != nil {
 			slog.Warn("failed to remove forward-in rule", "error", err)
+			errs = append(errs, err.Error())
 		}
 		if err := iptablesCmd("-D", "FORWARD", "-o", interfaceName, "-j", "ACCEPT"); err != nil {
 			slog.Warn("failed to remove forward-out rule", "error", err)
+			errs = append(errs, err.Error())
 		}
 	}
 
@@ -99,6 +106,10 @@ func RemoveFirewallRules(cfg *domain.FirewallConfig, serverAddress, interfaceNam
 		"forwarding", cfg.EnableForwarding,
 		"allow_peer_to_peer", cfg.AllowPeerToPeer,
 		"wg_interface", interfaceName)
+
+	if len(errs) > 0 {
+		return fmt.Errorf("some firewall rules failed to remove: %s", strings.Join(errs, "; "))
+	}
 	return nil
 }
 

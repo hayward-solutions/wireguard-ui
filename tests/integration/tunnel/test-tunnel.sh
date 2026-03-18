@@ -51,21 +51,40 @@ if [ -z "$TUNNEL_A_ID" ] || [ "$TUNNEL_A_ID" = "null" ]; then
 fi
 echo "  Tunnel A created: id=$TUNNEL_A_ID"
 echo "  Public key: $TUNNEL_A_PUBKEY"
+if [ -n "$TUNNEL_A_PSK" ]; then
+  echo "  PSK: (received, will share with B)"
+fi
 
 # Step 4: Create a tunnel on Server B pointing to Server A
+# Include A's public key, endpoint, and the shared PSK from A so both
+# sides of the tunnel use the same preshared key.
 echo "[4/8] Creating tunnel on Server B -> Server A..."
+
+# Build the JSON payload — include PSK from tunnel A so both sides share the same key
+TUNNEL_B_PAYLOAD=$(jq -n \
+  --arg name "tunnel-to-a" \
+  --arg desc "Tunnel from B to A" \
+  --arg addr "10.100.0.2/30" \
+  --argjson port 51826 \
+  --arg ppk "$TUNNEL_A_PUBKEY" \
+  --arg ep "server-a:51825" \
+  --arg psk "$TUNNEL_A_PSK" \
+  --arg aips "10.0.0.0/24" \
+  '{
+    name: $name,
+    description: $desc,
+    address: $addr,
+    listen_port: $port,
+    peer_public_key: $ppk,
+    peer_endpoint: $ep,
+    preshared_key: $psk,
+    peer_allowed_ips: $aips
+  }')
+
 TUNNEL_B_RESPONSE=$(curl -sf -X POST "${SERVER_B_URL}/api/v1/tunnels" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: ${SERVER_B_API_KEY}" \
-  -d "{
-    \"name\": \"tunnel-to-a\",
-    \"description\": \"Tunnel from B to A\",
-    \"address\": \"10.100.0.2/30\",
-    \"listen_port\": 51826,
-    \"peer_public_key\": \"${TUNNEL_A_PUBKEY}\",
-    \"peer_endpoint\": \"server-a:51825\",
-    \"peer_allowed_ips\": \"10.0.0.0/24\"
-  }")
+  -d "$TUNNEL_B_PAYLOAD")
 
 TUNNEL_B_ID=$(echo "$TUNNEL_B_RESPONSE" | jq -r '.data.id')
 TUNNEL_B_PUBKEY=$(echo "$TUNNEL_B_RESPONSE" | jq -r '.data.public_key')
@@ -99,12 +118,12 @@ fi
 # Step 6: Wait for tunnel handshake
 echo "[6/8] Waiting for tunnel handshake between servers..."
 TUNNEL_CONNECTED=false
-for i in $(seq 1 20); do
+for i in $(seq 1 30); do
   STATUS_A=$(curl -sf "${SERVER_A_URL}/api/v1/tunnels/${TUNNEL_A_ID}/status" \
     -H "X-API-Key: ${SERVER_A_API_KEY}" 2>/dev/null || echo '{}')
   CONNECTED=$(echo "$STATUS_A" | jq -r '.data.connected // false')
   if [ "$CONNECTED" = "true" ]; then
-    echo "  Tunnel handshake established!"
+    echo "  Tunnel handshake established! (after ${i}s)"
     TUNNEL_CONNECTED=true
     break
   fi
@@ -112,12 +131,24 @@ for i in $(seq 1 20); do
 done
 
 if [ "$TUNNEL_CONNECTED" = "false" ]; then
-  echo "WARN: Tunnel handshake not confirmed via status API (may still work)"
+  echo "WARN: Tunnel handshake not confirmed via status API after 30s"
   echo "  Status A: $STATUS_A"
+  STATUS_B=$(curl -sf "${SERVER_B_URL}/api/v1/tunnels/${TUNNEL_B_ID}/status" \
+    -H "X-API-Key: ${SERVER_B_API_KEY}" 2>/dev/null || echo '{}')
+  echo "  Status B: $STATUS_B"
 fi
 
 # Step 7: Create a client peer on Server A and connect
 echo "[7/8] Connecting client to Server A..."
+
+# Create an allow-all ACL rule so the test peer can access the network.
+# Peers created via the deprecated static API key don't map to a real user,
+# so the default ACL policy (deny-all) blocks their traffic without an explicit rule.
+curl -sf -X POST "${SERVER_A_URL}/api/v1/acls" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: ${SERVER_A_API_KEY}" \
+  -d '{"name":"allow-all","action":"allow","protocol":"any","dst_cidr":"0.0.0.0/0","priority":100,"enabled":true}' > /dev/null
+
 PEER_RESPONSE=$(curl -sf -X POST "${SERVER_A_URL}/api/v1/peers" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: ${SERVER_A_API_KEY}" \
@@ -142,6 +173,10 @@ cat /etc/wireguard/wg0.conf
 echo ""
 
 wg-quick up wg0
+
+# Restore Docker DNS resolver — wg-quick overrides /etc/resolv.conf with
+# the WireGuard DNS (1.1.1.1) which can't resolve Docker service names.
+echo "nameserver 127.0.0.11" > /etc/resolv.conf
 
 # Wait for client handshake
 echo "  Waiting for client handshake..."
@@ -201,6 +236,89 @@ else
   echo "  --- Tunnel B status ---"
   curl -sf "${SERVER_B_URL}/api/v1/tunnels/${TUNNEL_B_ID}/status" \
     -H "X-API-Key: ${SERVER_B_API_KEY}" | jq . 2>/dev/null || echo "(unavailable)"
+  echo ""
+  echo "  --- Server A tunnels list ---"
+  curl -sf "${SERVER_A_URL}/api/v1/tunnels" \
+    -H "X-API-Key: ${SERVER_A_API_KEY}" | jq . 2>/dev/null || echo "(unavailable)"
+  echo "  --- Server B tunnels list ---"
+  curl -sf "${SERVER_B_URL}/api/v1/tunnels" \
+    -H "X-API-Key: ${SERVER_B_API_KEY}" | jq . 2>/dev/null || echo "(unavailable)"
+  exit 1
+fi
+
+# Test 3: Verify tunnel toggle (disable/enable)
+echo "  Test 3: Tunnel toggle (disable then re-enable)..."
+echo "  DEBUG: TUNNEL_A_ID=${TUNNEL_A_ID}"
+TOGGLE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+  "${SERVER_A_URL}/api/v1/tunnels/${TUNNEL_A_ID}/toggle" \
+  -H "X-API-Key: ${SERVER_A_API_KEY}" 2>/dev/null) || TOGGLE_CODE="000"
+if [ "$TOGGLE_CODE" = "200" ]; then
+  TOGGLED_A=$(curl -s "${SERVER_A_URL}/api/v1/tunnels/${TUNNEL_A_ID}" \
+    -H "X-API-Key: ${SERVER_A_API_KEY}" 2>/dev/null || echo '{}')
+  ENABLED=$(echo "$TOGGLED_A" | jq -r '.data.enabled // "unknown"')
+  if [ "$ENABLED" = "false" ]; then
+    echo "  Tunnel A disabled successfully"
+  else
+    echo "  WARN: Tunnel A toggle did not disable (enabled=$ENABLED)"
+  fi
+else
+  echo "  WARN: Tunnel toggle returned $TOGGLE_CODE"
+fi
+
+# Re-enable
+curl -s -o /dev/null -X POST "${SERVER_A_URL}/api/v1/tunnels/${TUNNEL_A_ID}/toggle" \
+  -H "X-API-Key: ${SERVER_A_API_KEY}" 2>/dev/null || true
+sleep 3
+
+# Verify tunnel comes back up
+HEALTH_B2=$(curl -sf --connect-timeout 10 "http://${SERVER_B_VPN_IP}:8080/api/v1/health" 2>&1 || true)
+if echo "$HEALTH_B2" | jq -e '.status == "ok" or .data.status == "ok"' > /dev/null 2>&1; then
+  echo "  PASS: Tunnel reconnects after toggle"
+else
+  echo "  WARN: Tunnel did not reconnect after toggle (may need more time)"
+fi
+
+# Test 4: Verify tunnel deletion
+echo "  Test 4: Tunnel delete and cleanup..."
+DELETE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+  "${SERVER_A_URL}/api/v1/tunnels/${TUNNEL_A_ID}" \
+  -H "X-API-Key: ${SERVER_A_API_KEY}" 2>/dev/null) || DELETE_CODE="000"
+if [ "$DELETE_CODE" = "200" ]; then
+  echo "  Tunnel A deleted"
+else
+  echo "  WARN: Tunnel delete returned $DELETE_CODE"
+fi
+
+DELETED_CHECK=$(curl -s "${SERVER_A_URL}/api/v1/tunnels/${TUNNEL_A_ID}" \
+  -H "X-API-Key: ${SERVER_A_API_KEY}" 2>&1 || echo '{"error":{}}')
+if echo "$DELETED_CHECK" | jq -e '.error' > /dev/null 2>&1; then
+  echo "  PASS: Tunnel A deleted successfully"
+else
+  echo "  FAIL: Tunnel A still exists after delete"
+  exit 1
+fi
+
+# Test 5: Validation — reject bad inputs
+echo "  Test 5: Input validation..."
+BAD_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${SERVER_A_URL}/api/v1/tunnels" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: ${SERVER_A_API_KEY}" \
+  -d '{"name": "", "address": "not-a-cidr"}')
+if [ "$BAD_RESPONSE" = "400" ]; then
+  echo "  PASS: Empty name rejected with 400"
+else
+  echo "  FAIL: Expected 400, got $BAD_RESPONSE"
+  exit 1
+fi
+
+BAD_RESPONSE2=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${SERVER_A_URL}/api/v1/tunnels" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: ${SERVER_A_API_KEY}" \
+  -d '{"name": "valid-name", "peer_endpoint": "no-port"}')
+if [ "$BAD_RESPONSE2" = "400" ]; then
+  echo "  PASS: Bad endpoint rejected with 400"
+else
+  echo "  FAIL: Expected 400 for bad endpoint, got $BAD_RESPONSE2"
   exit 1
 fi
 
@@ -210,11 +328,7 @@ echo "=== Tunnel Stats ==="
 echo "--- Client ---"
 wg show
 echo ""
-echo "--- Tunnel A (on Server A) ---"
-curl -sf "${SERVER_A_URL}/api/v1/tunnels/${TUNNEL_A_ID}/status" \
-  -H "X-API-Key: ${SERVER_A_API_KEY}" | jq . 2>/dev/null || echo "(unavailable)"
-echo ""
-echo "--- Tunnel B (on Server B) ---"
+echo "--- Tunnel B (on Server B, still running) ---"
 curl -sf "${SERVER_B_URL}/api/v1/tunnels/${TUNNEL_B_ID}/status" \
   -H "X-API-Key: ${SERVER_B_API_KEY}" | jq . 2>/dev/null || echo "(unavailable)"
 

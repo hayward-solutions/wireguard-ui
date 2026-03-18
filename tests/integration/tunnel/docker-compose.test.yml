@@ -14,10 +14,10 @@ services:
       - DATABASE_DRIVER=sqlite
       - DATABASE_DSN=/data/wireguard.db
       - ADMIN_USERNAME=admin
-      - ADMIN_PASSWORD=testpassword-a1
+      - ADMIN_PASSWORD=TestPassword1a
       - ADMIN_API_KEY=api-key-server-a
-      - JWT_SECRET=jwt-secret-server-a123
-      - ENCRYPTION_KEY=encryption-key-server-a1
+      - JWT_SECRET=jwt-secret-server-a-test123
+      - ENCRYPTION_KEY=encryption-key-serverA1
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/api/v1/health"]
       interval: 2s
@@ -39,10 +39,10 @@ services:
       - DATABASE_DRIVER=sqlite
       - DATABASE_DSN=/data/wireguard.db
       - ADMIN_USERNAME=admin
-      - ADMIN_PASSWORD=testpassword-b1
+      - ADMIN_PASSWORD=TestPassword1b
       - ADMIN_API_KEY=api-key-server-b
-      - JWT_SECRET=jwt-secret-server-b123
-      - ENCRYPTION_KEY=encryption-key-server-b1
+      - JWT_SECRET=jwt-secret-server-b-test123
+      - ENCRYPTION_KEY=encryption-key-serverB1
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/api/v1/health"]
       interval: 2s

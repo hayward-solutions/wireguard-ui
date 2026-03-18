@@ -739,8 +739,8 @@ func (s *PostgresStore) SetUserGroups(ctx context.Context, userID string, groupI
 	}
 
 	for i, gid := range groupIDs {
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
-			INSERT INTO user_groups (user_id, group_id, source) VALUES ($1, $2, 'local')`),
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO user_groups (user_id, group_id, source) VALUES ($1, $2, 'local')`,
 			userID, gid); err != nil {
 			return fmt.Errorf("add user group %d: %w", i, err)
 		}
@@ -930,12 +930,40 @@ func pgScanTunnel(row interface{ Scan(dest ...any) error }) (*domain.Tunnel, err
 	return &t, err
 }
 
-func (s *PostgresStore) listTunnelsWhere(ctx context.Context, where string, args ...any) ([]domain.Tunnel, error) {
-	query := `SELECT ` + pgTunnelColumns + ` FROM tunnels`
-	if where != "" {
-		query += ` WHERE ` + where
+func (s *PostgresStore) decryptTunnel(t *domain.Tunnel) error {
+	var err error
+	t.PrivateKey, err = s.encryptor.Decrypt(t.PrivateKey)
+	if err != nil {
+		return fmt.Errorf("decrypt tunnel private key: %w", err)
 	}
-	query += ` ORDER BY created_at DESC`
+	t.PresharedKey, err = s.encryptor.Decrypt(t.PresharedKey)
+	if err != nil {
+		return fmt.Errorf("decrypt tunnel preshared key: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) encryptTunnelKeys(t *domain.Tunnel) (encPrivKey, encPSK string, err error) {
+	encPrivKey, err = s.encryptor.Encrypt(t.PrivateKey)
+	if err != nil {
+		return "", "", fmt.Errorf("encrypt tunnel private key: %w", err)
+	}
+	encPSK, err = s.encryptor.Encrypt(t.PresharedKey)
+	if err != nil {
+		return "", "", fmt.Errorf("encrypt tunnel preshared key: %w", err)
+	}
+	return encPrivKey, encPSK, nil
+}
+
+// listTunnelsWhere queries tunnels with an optional static WHERE clause.
+// IMPORTANT: the where parameter must only contain hardcoded strings, never user input.
+func (s *PostgresStore) listTunnelsWhere(ctx context.Context, where string, args ...any) ([]domain.Tunnel, error) {
+	var query string
+	if where != "" {
+		query = `SELECT ` + pgTunnelColumns + ` FROM tunnels WHERE ` + where + ` ORDER BY created_at DESC`
+	} else {
+		query = `SELECT ` + pgTunnelColumns + ` FROM tunnels ORDER BY created_at DESC`
+	}
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -948,6 +976,9 @@ func (s *PostgresStore) listTunnelsWhere(ctx context.Context, where string, args
 		t, err := pgScanTunnel(rows)
 		if err != nil {
 			return nil, fmt.Errorf("scan tunnel: %w", err)
+		}
+		if err := s.decryptTunnel(t); err != nil {
+			return nil, err
 		}
 		tunnels = append(tunnels, *t)
 	}
@@ -973,6 +1004,9 @@ func (s *PostgresStore) GetTunnel(ctx context.Context, id string) (*domain.Tunne
 	if err != nil {
 		return nil, fmt.Errorf("get tunnel: %w", err)
 	}
+	if err := s.decryptTunnel(t); err != nil {
+		return nil, err
+	}
 	return t, nil
 }
 
@@ -987,6 +1021,9 @@ func (s *PostgresStore) GetTunnelByName(ctx context.Context, name string) (*doma
 	if err != nil {
 		return nil, fmt.Errorf("get tunnel by name: %w", err)
 	}
+	if err := s.decryptTunnel(t); err != nil {
+		return nil, err
+	}
 	return t, nil
 }
 
@@ -994,12 +1031,18 @@ func (s *PostgresStore) CreateTunnel(ctx context.Context, t *domain.Tunnel) erro
 	now := time.Now()
 	t.CreatedAt = now
 	t.UpdatedAt = now
-	_, err := s.db.ExecContext(ctx, `
+
+	encPrivKey, encPSK, err := s.encryptTunnelKeys(t)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO tunnels (`+pgTunnelColumns+`)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
-		t.ID, t.Name, t.Description, t.PrivateKey, t.PublicKey,
+		t.ID, t.Name, t.Description, encPrivKey, t.PublicKey,
 		t.Address, t.ListenPort, t.DNS, t.MTU, t.PeerPublicKey, t.PeerEndpoint,
-		t.PresharedKey, t.PeerAllowedIPs, t.PersistentKeepalive, t.Enabled,
+		encPSK, t.PeerAllowedIPs, t.PersistentKeepalive, t.Enabled,
 		t.CreatedAt, t.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("create tunnel: %w", err)
@@ -1009,16 +1052,22 @@ func (s *PostgresStore) CreateTunnel(ctx context.Context, t *domain.Tunnel) erro
 
 func (s *PostgresStore) UpdateTunnel(ctx context.Context, t *domain.Tunnel) error {
 	t.UpdatedAt = time.Now()
-	_, err := s.db.ExecContext(ctx, `
+
+	encPrivKey, encPSK, err := s.encryptTunnelKeys(t)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.ExecContext(ctx, `
 		UPDATE tunnels SET name = $1, description = $2, private_key = $3, public_key = $4,
 		       address = $5, listen_port = $6, dns = $7, mtu = $8,
 		       peer_public_key = $9, peer_endpoint = $10, preshared_key = $11,
 		       peer_allowed_ips = $12, persistent_keepalive = $13,
 		       enabled = $14, updated_at = $15
 		WHERE id = $16`,
-		t.Name, t.Description, t.PrivateKey, t.PublicKey,
+		t.Name, t.Description, encPrivKey, t.PublicKey,
 		t.Address, t.ListenPort, t.DNS, t.MTU,
-		t.PeerPublicKey, t.PeerEndpoint, t.PresharedKey,
+		t.PeerPublicKey, t.PeerEndpoint, encPSK,
 		t.PeerAllowedIPs, t.PersistentKeepalive,
 		t.Enabled, t.UpdatedAt, t.ID)
 	if err != nil {

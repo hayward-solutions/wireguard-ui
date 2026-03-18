@@ -3,6 +3,7 @@ package wireguard
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"strings"
@@ -11,8 +12,17 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
+
+// ipProtocolNumber returns the appropriate gVisor protocol number for an IP address.
+func ipProtocolNumber(ip netip.Addr) tcpip.NetworkProtocolNumber {
+	if ip.Is6() {
+		return ipv6.ProtocolNumber
+	}
+	return ipv4.ProtocolNumber
+}
 
 // TunnelDialer provides a way to dial through a tunnel's network stack.
 type TunnelDialer interface {
@@ -80,6 +90,7 @@ func newNetstackTunnelDialer(tunnelID string, nm *NetstackManager, peerAllowedIP
 		}
 		prefix, err := netip.ParsePrefix(s)
 		if err != nil {
+			slog.Warn("skipping invalid CIDR in tunnel dialer", "tunnel", tunnelID, "cidr", s, "error", err)
 			continue
 		}
 		subnets = append(subnets, prefix)
@@ -116,7 +127,8 @@ func (d *netstackTunnelDialer) DialTCP(ctx context.Context, addr string) (net.Co
 		Port: uint16(portNum),
 	}
 
-	conn, err := gonet.DialTCPWithBind(ctx, d.gvStack, tcpip.FullAddress{NIC: 1}, fullAddr, ipv4.ProtocolNumber)
+	slog.Debug("tunnel dialer: DialTCP", "tunnel", d.id, "dst", addr, "proto", ipProtocolNumber(ip))
+	conn, err := gonet.DialTCPWithBind(ctx, d.gvStack, tcpip.FullAddress{NIC: 1}, fullAddr, ipProtocolNumber(ip))
 	if err != nil {
 		return nil, fmt.Errorf("dial tcp through tunnel %s: %w", d.id, err)
 	}
@@ -145,7 +157,7 @@ func (d *netstackTunnelDialer) DialUDP(ctx context.Context, addr string) (net.Co
 		Port: uint16(portNum),
 	}
 
-	conn, err := gonet.DialUDP(d.gvStack, nil, &fullAddr, ipv4.ProtocolNumber)
+	conn, err := gonet.DialUDP(d.gvStack, nil, &fullAddr, ipProtocolNumber(ip))
 	if err != nil {
 		return nil, fmt.Errorf("dial udp through tunnel %s: %w", d.id, err)
 	}
