@@ -164,3 +164,72 @@ func scriptHash(script string) string {
 	h := sha256.Sum256([]byte(script))
 	return fmt.Sprintf("%x", h[:8])
 }
+
+// ApplyTunnelRoutes adds kernel routes and iptables FORWARD rules to route traffic
+// from the main WireGuard interface to a tunnel interface for specific subnets.
+func ApplyTunnelRoutes(mainIface, tunnelIface string, subnets []string) error {
+	for _, subnet := range subnets {
+		subnet = strings.TrimSpace(subnet)
+		if subnet == "" {
+			continue
+		}
+
+		// Add kernel route: traffic to this subnet goes via the tunnel interface
+		if err := ipRouteCmd("add", subnet, "dev", tunnelIface); err != nil {
+			slog.Warn("failed to add tunnel route (may already exist)", "subnet", subnet, "iface", tunnelIface, "error", err)
+		}
+
+		// Allow forwarding from main WG interface to tunnel interface for this subnet
+		if err := iptablesCmd("-A", "FORWARD", "-i", mainIface, "-o", tunnelIface, "-d", subnet, "-j", "ACCEPT"); err != nil {
+			return fmt.Errorf("add tunnel forward-in rule for %s: %w", subnet, err)
+		}
+
+		// Allow return traffic from tunnel interface back to main WG interface
+		if err := iptablesCmd("-A", "FORWARD", "-i", tunnelIface, "-o", mainIface, "-s", subnet, "-j", "ACCEPT"); err != nil {
+			return fmt.Errorf("add tunnel forward-out rule for %s: %w", subnet, err)
+		}
+	}
+
+	slog.Info("tunnel routes applied",
+		"main_iface", mainIface,
+		"tunnel_iface", tunnelIface,
+		"subnets", subnets)
+	return nil
+}
+
+// RemoveTunnelRoutes removes kernel routes and iptables FORWARD rules for a tunnel.
+func RemoveTunnelRoutes(mainIface, tunnelIface string, subnets []string) error {
+	for _, subnet := range subnets {
+		subnet = strings.TrimSpace(subnet)
+		if subnet == "" {
+			continue
+		}
+
+		if err := ipRouteCmd("del", subnet, "dev", tunnelIface); err != nil {
+			slog.Warn("failed to remove tunnel route", "subnet", subnet, "iface", tunnelIface, "error", err)
+		}
+		if err := iptablesCmd("-D", "FORWARD", "-i", mainIface, "-o", tunnelIface, "-d", subnet, "-j", "ACCEPT"); err != nil {
+			slog.Warn("failed to remove tunnel forward-in rule", "subnet", subnet, "error", err)
+		}
+		if err := iptablesCmd("-D", "FORWARD", "-i", tunnelIface, "-o", mainIface, "-s", subnet, "-j", "ACCEPT"); err != nil {
+			slog.Warn("failed to remove tunnel forward-out rule", "subnet", subnet, "error", err)
+		}
+	}
+
+	slog.Info("tunnel routes removed",
+		"main_iface", mainIface,
+		"tunnel_iface", tunnelIface,
+		"subnets", subnets)
+	return nil
+}
+
+// ipRouteCmd calls the ip route binary directly with individual arguments.
+var ipRouteCmd = func(args ...string) error {
+	fullArgs := append([]string{"route"}, args...)
+	slog.Debug("executing ip route", "args", fullArgs)
+	out, err := exec.Command("ip", fullArgs...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("ip %s: %s: %w", strings.Join(fullArgs, " "), strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}

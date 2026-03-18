@@ -213,4 +213,21 @@ func (m *NetstackManager) Close() error {
 	return nil
 }
 
+// RegisterTunnelDialer registers a tunnel dialer with the forwarder.
+// Traffic matching the dialer's subnets will be routed through the tunnel.
+func (m *NetstackManager) RegisterTunnelDialer(td TunnelDialer) {
+	if m.forwarder != nil {
+		m.forwarder.tunnels.register(td)
+		slog.Info("netstack: registered tunnel dialer", "tunnel", td.TunnelID(), "subnets", td.Subnets())
+	}
+}
+
+// UnregisterTunnelDialer removes a tunnel dialer from the forwarder.
+func (m *NetstackManager) UnregisterTunnelDialer(tunnelID string) {
+	if m.forwarder != nil {
+		m.forwarder.tunnels.unregister(tunnelID)
+		slog.Info("netstack: unregistered tunnel dialer", "tunnel", tunnelID)
+	}
+}
+
 var _ Manager = (*NetstackManager)(nil)

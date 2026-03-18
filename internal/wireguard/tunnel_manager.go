@@ -3,6 +3,7 @@ package wireguard
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/hayward-solutions/wireguard-ui/internal/domain"
@@ -14,29 +15,43 @@ type TunnelMode string
 const (
 	TunnelModeNetstack  TunnelMode = "netstack"
 	TunnelModeUserspace TunnelMode = "userspace"
+	TunnelModeKernel    TunnelMode = "kernel"
 	TunnelModeMock      TunnelMode = "mock"
 )
 
 // tunnelInstance tracks a running tunnel's WireGuard interface.
 type tunnelInstance struct {
-	tunnel  *domain.Tunnel
-	manager Manager
+	tunnel        *domain.Tunnel
+	manager       Manager
+	interfaceName string // kernel interface name (userspace/kernel modes only)
 }
 
 // TunnelManager manages per-tunnel WireGuard interfaces.
-// Each tunnel gets its own WireGuard interface (netstack or userspace).
+// Each tunnel gets its own WireGuard interface (netstack, userspace, or kernel).
 type TunnelManager struct {
-	mode    TunnelMode
-	mu      sync.Mutex
-	tunnels map[string]*tunnelInstance // tunnel ID -> running instance
+	mode              TunnelMode
+	mainInterfaceName string // main wg0 interface name, for iptables/ip route (userspace/kernel)
+	mainNetstack      *NetstackManager // reference to main netstack manager (netstack mode only)
+	mu                sync.Mutex
+	tunnels           map[string]*tunnelInstance // tunnel ID -> running instance
 }
 
 // NewTunnelManager creates a new TunnelManager for the given mode.
-func NewTunnelManager(mode TunnelMode) *TunnelManager {
+// mainIfaceName is the main WireGuard interface name (e.g. "wg0") used for
+// routing rules in userspace/kernel modes.
+func NewTunnelManager(mode TunnelMode, mainIfaceName string) *TunnelManager {
 	return &TunnelManager{
-		mode:    mode,
-		tunnels: make(map[string]*tunnelInstance),
+		mode:              mode,
+		mainInterfaceName: mainIfaceName,
+		tunnels:           make(map[string]*tunnelInstance),
 	}
+}
+
+// SetMainNetstackManager provides a reference to the main NetstackManager.
+// In netstack mode, this is used to register tunnel dialers on the main forwarder
+// so traffic matching tunnel subnets is routed through the tunnel's gVisor stack.
+func (tm *TunnelManager) SetMainNetstackManager(nm *NetstackManager) {
+	tm.mainNetstack = nm
 }
 
 // StartTunnel creates a WireGuard interface for the tunnel and configures the remote peer.
@@ -52,7 +67,7 @@ func (tm *TunnelManager) StartTunnel(t *domain.Tunnel) error {
 		return fmt.Errorf("tunnel %s has no keypair", t.Name)
 	}
 
-	mgr, err := tm.createManager(t)
+	mgr, ifName, err := tm.createManager(t)
 	if err != nil {
 		return fmt.Errorf("create manager for tunnel %s: %w", t.Name, err)
 	}
@@ -71,12 +86,17 @@ func (tm *TunnelManager) StartTunnel(t *domain.Tunnel) error {
 		return fmt.Errorf("add remote peer for tunnel %s: %w", t.Name, err)
 	}
 
-	tm.tunnels[t.ID] = &tunnelInstance{
-		tunnel:  t,
-		manager: mgr,
+	inst := &tunnelInstance{
+		tunnel:        t,
+		manager:       mgr,
+		interfaceName: ifName,
 	}
+	tm.tunnels[t.ID] = inst
 
-	slog.Info("tunnel started", "name", t.Name, "id", t.ID, "mode", tm.mode)
+	// Set up routing from the main interface to this tunnel
+	tm.applyRouting(t, inst)
+
+	slog.Info("tunnel started", "name", t.Name, "id", t.ID, "mode", tm.mode, "iface", ifName)
 	return nil
 }
 
@@ -89,6 +109,9 @@ func (tm *TunnelManager) StopTunnel(id string) error {
 	if !ok {
 		return nil // not running
 	}
+
+	// Remove routing before stopping the interface
+	tm.removeRouting(inst.tunnel, inst)
 
 	if err := inst.manager.Close(); err != nil {
 		slog.Error("failed to close tunnel", "id", id, "error", err)
@@ -171,6 +194,7 @@ func (tm *TunnelManager) Close() error {
 	defer tm.mu.Unlock()
 
 	for id, inst := range tm.tunnels {
+		tm.removeRouting(inst.tunnel, inst)
 		if err := inst.manager.Close(); err != nil {
 			slog.Error("failed to close tunnel", "id", id, "error", err)
 		}
@@ -180,18 +204,82 @@ func (tm *TunnelManager) Close() error {
 }
 
 // createManager creates a WireGuard Manager for a tunnel based on the configured mode.
-func (tm *TunnelManager) createManager(t *domain.Tunnel) (Manager, error) {
+// Returns the manager and the kernel interface name (empty for netstack/mock).
+func (tm *TunnelManager) createManager(t *domain.Tunnel) (Manager, string, error) {
 	switch tm.mode {
 	case TunnelModeNetstack:
-		return NewNetstackManager(), nil
+		return NewNetstackManager(), "", nil
 	case TunnelModeUserspace:
 		ifName := tunnelInterfaceName(t.ID)
-		return NewUserspaceManager(ifName)
+		mgr, err := NewUserspaceManager(ifName)
+		return mgr, ifName, err
+	case TunnelModeKernel:
+		ifName := tunnelInterfaceName(t.ID)
+		mgr, err := NewWgctrlManager(ifName)
+		return mgr, ifName, err
 	case TunnelModeMock:
-		return NewMockManager(), nil
+		return NewMockManager(), "", nil
 	default:
-		return nil, fmt.Errorf("unsupported tunnel mode: %s", tm.mode)
+		return nil, "", fmt.Errorf("unsupported tunnel mode: %s", tm.mode)
 	}
+}
+
+// applyRouting sets up traffic routing from the main interface to this tunnel.
+func (tm *TunnelManager) applyRouting(t *domain.Tunnel, inst *tunnelInstance) {
+	if t.PeerAllowedIPs == "" {
+		return
+	}
+	subnets := splitSubnets(t.PeerAllowedIPs)
+
+	switch tm.mode {
+	case TunnelModeUserspace, TunnelModeKernel:
+		if inst.interfaceName != "" && tm.mainInterfaceName != "" {
+			if err := ApplyTunnelRoutes(tm.mainInterfaceName, inst.interfaceName, subnets); err != nil {
+				slog.Error("failed to apply tunnel routes", "tunnel", t.Name, "error", err)
+			}
+		}
+	case TunnelModeNetstack:
+		if tm.mainNetstack != nil {
+			nm, ok := inst.manager.(*NetstackManager)
+			if ok {
+				dialer := newNetstackTunnelDialer(t.ID, nm, t.PeerAllowedIPs)
+				tm.mainNetstack.RegisterTunnelDialer(dialer)
+			}
+		}
+	}
+}
+
+// removeRouting tears down traffic routing for a tunnel.
+func (tm *TunnelManager) removeRouting(t *domain.Tunnel, inst *tunnelInstance) {
+	if t.PeerAllowedIPs == "" {
+		return
+	}
+	subnets := splitSubnets(t.PeerAllowedIPs)
+
+	switch tm.mode {
+	case TunnelModeUserspace, TunnelModeKernel:
+		if inst.interfaceName != "" && tm.mainInterfaceName != "" {
+			if err := RemoveTunnelRoutes(tm.mainInterfaceName, inst.interfaceName, subnets); err != nil {
+				slog.Error("failed to remove tunnel routes", "tunnel", t.Name, "error", err)
+			}
+		}
+	case TunnelModeNetstack:
+		if tm.mainNetstack != nil {
+			tm.mainNetstack.UnregisterTunnelDialer(t.ID)
+		}
+	}
+}
+
+// splitSubnets splits a comma-separated list of CIDRs.
+func splitSubnets(allowedIPs string) []string {
+	var result []string
+	for _, s := range strings.Split(allowedIPs, ",") {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			result = append(result, s)
+		}
+	}
+	return result
 }
 
 // tunnelInterfaceName generates a unique interface name for a tunnel.

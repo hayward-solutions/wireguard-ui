@@ -235,10 +235,17 @@ func run() error {
 	case cfg.WGUserspaceMode:
 		tunnelMode = wireguard.TunnelModeUserspace
 	default:
-		// Kernel mode: tunnels use userspace to avoid requiring kernel WireGuard module per-tunnel
-		tunnelMode = wireguard.TunnelModeUserspace
+		tunnelMode = wireguard.TunnelModeKernel
 	}
-	tunnelMgr := wireguard.NewTunnelManager(tunnelMode)
+	tunnelMgr := wireguard.NewTunnelManager(tunnelMode, cfg.WGInterfaceName)
+
+	// For netstack mode, give the TunnelManager a reference to the main
+	// NetstackManager so tunnel dialers can be registered on the forwarder.
+	if cfg.WGNetstackMode {
+		if nm, ok := wg.(*wireguard.NetstackManager); ok {
+			tunnelMgr.SetMainNetstackManager(nm)
+		}
+	}
 
 	// Bootstrap tunnels from TUNNEL_PEERS env var (first-boot)
 	if cfg.TunnelPeers != "" {
