@@ -3,6 +3,11 @@ interface APIResponse<T> {
 	error: { code: string; message: string } | null;
 }
 
+function getCSRFToken(): string | undefined {
+	const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+	return match ? decodeURIComponent(match[1]) : undefined;
+}
+
 class APIClient {
 	private baseURL: string;
 	private refreshing: Promise<boolean> | null = null;
@@ -12,9 +17,14 @@ class APIClient {
 	}
 
 	private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+		const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+		const csrf = getCSRFToken();
+		if (csrf) {
+			headers['X-CSRF-Token'] = csrf;
+		}
 		const opts: RequestInit = {
 			method,
-			headers: { 'Content-Type': 'application/json' },
+			headers,
 			credentials: 'include'
 		};
 
@@ -60,8 +70,14 @@ class APIClient {
 		}
 		this.refreshing = (async () => {
 			try {
+				const headers: Record<string, string> = {};
+				const csrf = getCSRFToken();
+				if (csrf) {
+					headers['X-CSRF-Token'] = csrf;
+				}
 				const res = await fetch(`${this.baseURL}/auth/refresh`, {
 					method: 'POST',
+					headers,
 					credentials: 'include'
 				});
 				return res.ok;

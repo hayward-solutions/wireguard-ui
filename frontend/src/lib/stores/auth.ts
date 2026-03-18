@@ -29,9 +29,19 @@ export async function checkAuth() {
 	}
 }
 
+function getCSRFToken(): string | undefined {
+	const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+	return match ? decodeURIComponent(match[1]) : undefined;
+}
+
 export async function logout() {
 	try {
-		await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
+		const headers: Record<string, string> = {};
+		const csrf = getCSRFToken();
+		if (csrf) {
+			headers['X-CSRF-Token'] = csrf;
+		}
+		await fetch('/auth/logout', { method: 'POST', headers, credentials: 'include' });
 	} finally {
 		user.set(null);
 		window.location.href = '/login';

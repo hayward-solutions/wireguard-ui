@@ -280,6 +280,13 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   h.secureCookie,
 	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     csrfCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Secure:   h.secureCookie,
+	})
 	writeJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
 }
 
@@ -374,6 +381,9 @@ func (h *AuthHandler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
+	// Rotate CSRF token on refresh to stay in sync with the session.
+	h.setCSRFCookie(w)
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"id":    user.ID,
 		"email": user.Username,
@@ -420,6 +430,27 @@ func (h *AuthHandler) issueSessionAndToken(w http.ResponseWriter, r *http.Reques
 		Path:     "/",
 		MaxAge:   int(h.jwt.Expiry().Seconds()),
 		HttpOnly: true,
+		Secure:   h.secureCookie,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	// Set CSRF token cookie (readable by JS so the frontend can echo it back).
+	h.setCSRFCookie(w)
+}
+
+// setCSRFCookie generates a fresh CSRF token and sets it as a non-HttpOnly cookie.
+func (h *AuthHandler) setCSRFCookie(w http.ResponseWriter) {
+	csrfToken, err := GenerateCSRFToken()
+	if err != nil {
+		slog.Error("failed to generate CSRF token", "error", err)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     csrfCookieName,
+		Value:    csrfToken,
+		Path:     "/",
+		MaxAge:   int(h.sessionExpiry.Seconds()),
+		HttpOnly: false, // must be readable by JavaScript
 		Secure:   h.secureCookie,
 		SameSite: http.SameSiteLaxMode,
 	})
