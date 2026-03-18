@@ -115,6 +115,7 @@ func (s *SQLiteStore) GetServerConfig(ctx context.Context) (*domain.ServerConfig
 		       COALESCE(default_allowed_ips, '0.0.0.0/0, ::/0'),
 		       COALESCE(default_dns, ''),
 		       COALESCE(firewall_config, ''),
+		       COALESCE(tunnel_subnet, '10.100.0.0/16'),
 		       created_at, updated_at
 		FROM server_config WHERE id = 'default'`)
 
@@ -123,7 +124,7 @@ func (s *SQLiteStore) GetServerConfig(ctx context.Context) (*domain.ServerConfig
 	err := row.Scan(&cfg.ID, &cfg.PrivateKey, &cfg.PublicKey, &cfg.ListenPort,
 		&cfg.Address, &cfg.DNS, &cfg.MTU, &cfg.PostUp, &cfg.PostDown,
 		&cfg.Endpoint, &cfg.DefaultAllowedIPs, &cfg.DefaultDNS,
-		&firewallJSON, &cfg.CreatedAt, &cfg.UpdatedAt)
+		&firewallJSON, &cfg.TunnelSubnet, &cfg.CreatedAt, &cfg.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -167,8 +168,8 @@ func (s *SQLiteStore) SaveServerConfig(ctx context.Context, cfg *domain.ServerCo
 	}
 
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO server_config (id, private_key, public_key, listen_port, address, dns, mtu, post_up, post_down, endpoint, default_allowed_ips, default_dns, firewall_config, created_at, updated_at)
-		VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO server_config (id, private_key, public_key, listen_port, address, dns, mtu, post_up, post_down, endpoint, default_allowed_ips, default_dns, firewall_config, tunnel_subnet, created_at, updated_at)
+		VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			private_key = excluded.private_key,
 			public_key = excluded.public_key,
@@ -182,10 +183,11 @@ func (s *SQLiteStore) SaveServerConfig(ctx context.Context, cfg *domain.ServerCo
 			default_allowed_ips = excluded.default_allowed_ips,
 			default_dns = excluded.default_dns,
 			firewall_config = excluded.firewall_config,
+			tunnel_subnet = excluded.tunnel_subnet,
 			updated_at = excluded.updated_at`,
 		encPrivKey, cfg.PublicKey, cfg.ListenPort, cfg.Address, cfg.DNS,
 		cfg.MTU, cfg.PostUp, cfg.PostDown, cfg.Endpoint,
-		cfg.DefaultAllowedIPs, cfg.DefaultDNS, firewallJSON, cfg.CreatedAt, cfg.UpdatedAt)
+		cfg.DefaultAllowedIPs, cfg.DefaultDNS, firewallJSON, cfg.TunnelSubnet, cfg.CreatedAt, cfg.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("save server config: %w", err)
 	}

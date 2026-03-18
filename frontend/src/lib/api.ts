@@ -307,6 +307,7 @@ export interface ServerConfig {
 	endpoint: string;
 	default_allowed_ips: string;
 	default_dns: string;
+	tunnel_subnet: string;
 }
 
 export interface Peer {
@@ -420,6 +421,8 @@ export interface TunnelWithStatus extends Tunnel {
 export interface CreateTunnelRequest {
 	name: string;
 	description?: string;
+	private_key?: string;
+	public_key?: string;
 	address?: string;
 	listen_port?: number;
 	dns?: string;
@@ -428,6 +431,7 @@ export interface CreateTunnelRequest {
 	peer_endpoint?: string;
 	peer_allowed_ips?: string;
 	persistent_keepalive?: number;
+	preshared_key?: string;
 }
 
 export interface CreateTunnelResponse extends Tunnel {
