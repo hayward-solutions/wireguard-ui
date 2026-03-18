@@ -60,6 +60,7 @@ func ApplyFirewallRules(cfg *domain.FirewallConfig, serverAddress, interfaceName
 }
 
 // RemoveFirewallRules removes the structured iptables rules.
+// Best-effort: logs and collects individual failures but attempts all removals.
 func RemoveFirewallRules(cfg *domain.FirewallConfig, serverAddress, interfaceName string) error {
 	if cfg == nil {
 		return nil
@@ -74,9 +75,12 @@ func RemoveFirewallRules(cfg *domain.FirewallConfig, serverAddress, interfaceNam
 		outIface = "eth+"
 	}
 
+	var errs []string
+
 	if cfg.EnableNAT {
 		if err := iptablesCmd("-t", "nat", "-D", "POSTROUTING", "-s", source, "-o", outIface, "-j", "MASQUERADE"); err != nil {
 			slog.Warn("failed to remove NAT masquerade rule", "error", err)
+			errs = append(errs, err.Error())
 		}
 	}
 
@@ -84,13 +88,16 @@ func RemoveFirewallRules(cfg *domain.FirewallConfig, serverAddress, interfaceNam
 		if !cfg.AllowPeerToPeer {
 			if err := iptablesCmd("-D", "FORWARD", "-i", interfaceName, "-o", interfaceName, "-j", "DROP"); err != nil {
 				slog.Warn("failed to remove peer-isolation rule", "error", err)
+				errs = append(errs, err.Error())
 			}
 		}
 		if err := iptablesCmd("-D", "FORWARD", "-i", interfaceName, "-j", "ACCEPT"); err != nil {
 			slog.Warn("failed to remove forward-in rule", "error", err)
+			errs = append(errs, err.Error())
 		}
 		if err := iptablesCmd("-D", "FORWARD", "-o", interfaceName, "-j", "ACCEPT"); err != nil {
 			slog.Warn("failed to remove forward-out rule", "error", err)
+			errs = append(errs, err.Error())
 		}
 	}
 
@@ -99,6 +106,10 @@ func RemoveFirewallRules(cfg *domain.FirewallConfig, serverAddress, interfaceNam
 		"forwarding", cfg.EnableForwarding,
 		"allow_peer_to_peer", cfg.AllowPeerToPeer,
 		"wg_interface", interfaceName)
+
+	if len(errs) > 0 {
+		return fmt.Errorf("some firewall rules failed to remove: %s", strings.Join(errs, "; "))
+	}
 	return nil
 }
 
@@ -163,4 +174,73 @@ func RunScriptIfAllowed(script string, scriptType string, allowed bool) error {
 func scriptHash(script string) string {
 	h := sha256.Sum256([]byte(script))
 	return fmt.Sprintf("%x", h[:8])
+}
+
+// ApplyTunnelRoutes adds kernel routes and iptables FORWARD rules to route traffic
+// from the main WireGuard interface to a tunnel interface for specific subnets.
+func ApplyTunnelRoutes(mainIface, tunnelIface string, subnets []string) error {
+	for _, subnet := range subnets {
+		subnet = strings.TrimSpace(subnet)
+		if subnet == "" {
+			continue
+		}
+
+		// Add kernel route: traffic to this subnet goes via the tunnel interface
+		if err := ipRouteCmd("add", subnet, "dev", tunnelIface); err != nil {
+			slog.Warn("failed to add tunnel route (may already exist)", "subnet", subnet, "iface", tunnelIface, "error", err)
+		}
+
+		// Allow forwarding from main WG interface to tunnel interface for this subnet
+		if err := iptablesCmd("-A", "FORWARD", "-i", mainIface, "-o", tunnelIface, "-d", subnet, "-j", "ACCEPT"); err != nil {
+			return fmt.Errorf("add tunnel forward-in rule for %s: %w", subnet, err)
+		}
+
+		// Allow return traffic from tunnel interface back to main WG interface
+		if err := iptablesCmd("-A", "FORWARD", "-i", tunnelIface, "-o", mainIface, "-s", subnet, "-j", "ACCEPT"); err != nil {
+			return fmt.Errorf("add tunnel forward-out rule for %s: %w", subnet, err)
+		}
+	}
+
+	slog.Info("tunnel routes applied",
+		"main_iface", mainIface,
+		"tunnel_iface", tunnelIface,
+		"subnets", subnets)
+	return nil
+}
+
+// RemoveTunnelRoutes removes kernel routes and iptables FORWARD rules for a tunnel.
+func RemoveTunnelRoutes(mainIface, tunnelIface string, subnets []string) error {
+	for _, subnet := range subnets {
+		subnet = strings.TrimSpace(subnet)
+		if subnet == "" {
+			continue
+		}
+
+		if err := ipRouteCmd("del", subnet, "dev", tunnelIface); err != nil {
+			slog.Warn("failed to remove tunnel route", "subnet", subnet, "iface", tunnelIface, "error", err)
+		}
+		if err := iptablesCmd("-D", "FORWARD", "-i", mainIface, "-o", tunnelIface, "-d", subnet, "-j", "ACCEPT"); err != nil {
+			slog.Warn("failed to remove tunnel forward-in rule", "subnet", subnet, "error", err)
+		}
+		if err := iptablesCmd("-D", "FORWARD", "-i", tunnelIface, "-o", mainIface, "-s", subnet, "-j", "ACCEPT"); err != nil {
+			slog.Warn("failed to remove tunnel forward-out rule", "subnet", subnet, "error", err)
+		}
+	}
+
+	slog.Info("tunnel routes removed",
+		"main_iface", mainIface,
+		"tunnel_iface", tunnelIface,
+		"subnets", subnets)
+	return nil
+}
+
+// ipRouteCmd calls the ip route binary directly with individual arguments.
+var ipRouteCmd = func(args ...string) error {
+	fullArgs := append([]string{"route"}, args...)
+	slog.Debug("executing ip route", "args", fullArgs)
+	out, err := exec.Command("ip", fullArgs...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("ip %s: %s: %w", strings.Join(fullArgs, " "), strings.TrimSpace(string(out)), err)
+	}
+	return nil
 }

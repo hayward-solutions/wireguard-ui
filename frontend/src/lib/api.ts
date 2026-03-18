@@ -260,6 +260,39 @@ class APIClient {
 	async reloadACL() {
 		return this.request<{ message: string }>('POST', '/api/v1/acls/reload');
 	}
+
+	// Tunnels
+	async listTunnels() {
+		return this.request<TunnelWithStatus[]>('GET', '/api/v1/tunnels');
+	}
+
+	async getTunnel(id: string) {
+		return this.request<Tunnel>('GET', `/api/v1/tunnels/${id}`);
+	}
+
+	async createTunnel(data: CreateTunnelRequest) {
+		return this.request<CreateTunnelResponse>('POST', '/api/v1/tunnels', data);
+	}
+
+	async updateTunnel(id: string, data: Partial<Tunnel>) {
+		return this.request<Tunnel>('PUT', `/api/v1/tunnels/${id}`, data);
+	}
+
+	async deleteTunnel(id: string) {
+		return this.request<void>('DELETE', `/api/v1/tunnels/${id}`);
+	}
+
+	async toggleTunnel(id: string) {
+		return this.request<Tunnel>('PATCH', `/api/v1/tunnels/${id}/toggle`);
+	}
+
+	async getTunnelStatus(id: string) {
+		return this.request<TunnelStatus>('GET', `/api/v1/tunnels/${id}/status`);
+	}
+
+	getTunnelRemoteConfigURL(id: string) {
+		return `/api/v1/tunnels/${id}/config`;
+	}
 }
 
 export interface ServerConfig {
@@ -351,6 +384,54 @@ export interface PeerStats {
 	transfer_rx: number;
 	transfer_tx: number;
 	connected: boolean;
+}
+
+export interface Tunnel {
+	id: string;
+	name: string;
+	description: string;
+	public_key: string;
+	address: string;
+	listen_port: number;
+	dns: string;
+	mtu: number;
+	peer_public_key: string;
+	peer_endpoint: string;
+	peer_allowed_ips: string;
+	persistent_keepalive: number;
+	enabled: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface TunnelStatus {
+	tunnel_id: string;
+	connected: boolean;
+	last_handshake?: string;
+	transfer_rx: number;
+	transfer_tx: number;
+	endpoint?: string;
+}
+
+export interface TunnelWithStatus extends Tunnel {
+	status: TunnelStatus | null;
+}
+
+export interface CreateTunnelRequest {
+	name: string;
+	description?: string;
+	address?: string;
+	listen_port?: number;
+	dns?: string;
+	mtu?: number;
+	peer_public_key?: string;
+	peer_endpoint?: string;
+	peer_allowed_ips?: string;
+	persistent_keepalive?: number;
+}
+
+export interface CreateTunnelResponse extends Tunnel {
+	preshared_key?: string;
 }
 
 export const api = new APIClient();

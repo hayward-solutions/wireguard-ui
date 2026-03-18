@@ -12,6 +12,7 @@ type Peer struct {
 	Address            string    `json:"address"`
 	DNS                string    `json:"dns"`
 	PersistentKeepalive int      `json:"persistent_keepalive"`
+	Endpoint           string    `json:"-"` // transient: remote endpoint for tunnel peers (not DB-stored)
 	Enabled            bool      `json:"enabled"`
 	CreatedBy          string    `json:"created_by"`
 	CreatedByName      string    `json:"created_by_name,omitempty"`

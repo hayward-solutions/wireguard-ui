@@ -25,12 +25,16 @@ const (
 )
 
 // netstackForwarder forwards TCP and UDP traffic from a gVisor stack to the host network.
+// If tunnel dialers are registered, traffic matching a tunnel's subnets is routed through
+// the tunnel's gVisor stack instead of the host network.
 type netstackForwarder struct {
-	ctx       context.Context
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
-	localAddr string             // the server's VPN address (e.g., "10.0.0.1")
-	acl       *acl.PolicyEngine  // nil means allow-all (backwards compatible)
+	ctx        context.Context
+	cancel     context.CancelFunc
+	wg         sync.WaitGroup
+	localAddr  string             // the server's VPN address (e.g., "10.0.0.1")
+	forwardAll bool               // if true, rewrite ALL destinations to 127.0.0.1 (tunnel mode)
+	acl        *acl.PolicyEngine  // nil means allow-all (backwards compatible)
+	tunnels    tunnelDialerRegistry
 }
 
 // startForwarder registers TCP and UDP forwarding handlers on the gVisor stack
@@ -63,9 +67,12 @@ func (f *netstackForwarder) stop() {
 
 // resolveHostAddr rewrites the destination address so that traffic destined for the
 // server's own VPN IP is sent to 127.0.0.1 instead (the VPN IP only exists in gVisor).
+// In forwardAll mode (tunnel interfaces), ALL destinations are rewritten to 127.0.0.1
+// because the tunnel's gVisor stack is purely a transport layer — traffic arriving on
+// it is destined for services on the local host.
 func (f *netstackForwarder) resolveHostAddr(gvisorIP string, port int) string {
 	host := gvisorIP
-	if host == f.localAddr {
+	if f.forwardAll || host == f.localAddr {
 		host = "127.0.0.1"
 	}
 	return net.JoinHostPort(host, strconv.Itoa(port))
@@ -89,12 +96,35 @@ func (f *netstackForwarder) handleTCP(r *tcp.ForwarderRequest) {
 
 	dstAddr := f.resolveHostAddr(id.LocalAddress.String(), int(id.LocalPort))
 
-	// Dial the real destination on the host network.
-	outConn, err := net.DialTimeout("tcp", dstAddr, tcpDialTimeout)
-	if err != nil {
-		slog.Warn("netstack tcp: dial failed", "dst", dstAddr, "error", err)
-		r.Complete(true) // send RST
-		return
+	// Check if destination matches a tunnel subnet — if so, route through the tunnel.
+	var outConn net.Conn
+	dstIP, dstOk := netip.AddrFromSlice(id.LocalAddress.AsSlice())
+	td := func() TunnelDialer {
+		if dstOk {
+			return f.tunnels.find(dstIP)
+		}
+		return nil
+	}()
+
+	if td != nil {
+		ctx, cancel := context.WithTimeout(f.ctx, tcpDialTimeout)
+		defer cancel()
+		var err error
+		outConn, err = td.DialTCP(ctx, dstAddr)
+		if err != nil {
+			slog.Warn("netstack tcp: tunnel dial failed", "dst", dstAddr, "tunnel", td.TunnelID(), "error", err)
+			r.Complete(true)
+			return
+		}
+	} else {
+		// Dial the real destination on the host network.
+		var err error
+		outConn, err = net.DialTimeout("tcp", dstAddr, tcpDialTimeout)
+		if err != nil {
+			slog.Warn("netstack tcp: dial failed", "dst", dstAddr, "error", err)
+			r.Complete(true) // send RST
+			return
+		}
 	}
 
 	// Accept on the gVisor side.
@@ -158,19 +188,42 @@ func (f *netstackForwarder) handleUDP(r *udp.ForwarderRequest) {
 
 	inConn := gonet.NewUDPConn(&wq, ep)
 
-	// Dial real destination on the host network.
-	hostAddr, err := net.ResolveUDPAddr("udp", dstAddr)
-	if err != nil {
-		slog.Warn("netstack udp: resolve failed", "dst", dstAddr, "error", err)
-		inConn.Close()
-		return
-	}
+	// Check if destination matches a tunnel subnet.
+	dstIP, dstOk := netip.AddrFromSlice(id.LocalAddress.AsSlice())
+	td := func() TunnelDialer {
+		if dstOk {
+			return f.tunnels.find(dstIP)
+		}
+		return nil
+	}()
 
-	outConn, err := net.DialUDP("udp", nil, hostAddr)
-	if err != nil {
-		slog.Warn("netstack udp: dial failed", "dst", dstAddr, "error", err)
-		inConn.Close()
-		return
+	var outConn net.Conn
+	if td != nil {
+		ctx, cancel := context.WithTimeout(f.ctx, tcpDialTimeout)
+		defer cancel()
+		var err error
+		outConn, err = td.DialUDP(ctx, dstAddr)
+		if err != nil {
+			slog.Warn("netstack udp: tunnel dial failed", "dst", dstAddr, "tunnel", td.TunnelID(), "error", err)
+			inConn.Close()
+			return
+		}
+	} else {
+		// Dial real destination on the host network.
+		hostAddr, err := net.ResolveUDPAddr("udp", dstAddr)
+		if err != nil {
+			slog.Warn("netstack udp: resolve failed", "dst", dstAddr, "error", err)
+			inConn.Close()
+			return
+		}
+
+		var dialErr error
+		outConn, dialErr = net.DialUDP("udp", nil, hostAddr)
+		if dialErr != nil {
+			slog.Warn("netstack udp: dial failed", "dst", dstAddr, "error", dialErr)
+			inConn.Close()
+			return
+		}
 	}
 
 	f.wg.Add(1)
@@ -181,7 +234,7 @@ func (f *netstackForwarder) handleUDP(r *udp.ForwarderRequest) {
 }
 
 // relayUDP copies UDP packets bidirectionally with an idle timeout.
-func relayUDP(ctx context.Context, gvisorConn *gonet.UDPConn, hostConn *net.UDPConn) {
+func relayUDP(ctx context.Context, gvisorConn net.Conn, hostConn net.Conn) {
 	defer gvisorConn.Close()
 	defer hostConn.Close()
 

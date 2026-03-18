@@ -1,0 +1,76 @@
+services:
+  # Server A: WireGuard-UI running netstack mode on subnet 10.0.0.0/24
+  server-a:
+    build:
+      context: ../../..
+    environment:
+      - WG_NETSTACK_MODE=true
+      - WG_USERSPACE_MODE=false
+      - WG_ENDPOINT=server-a:51820
+      - WG_ADDRESS=10.0.0.1/24
+      - WG_LISTEN_PORT=51820
+      - WG_DNS=1.1.1.1
+      - WG_DEFAULT_ALLOWED_IPS=10.0.0.0/24
+      - DATABASE_DRIVER=sqlite
+      - DATABASE_DSN=/data/wireguard.db
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=TestPassword1a
+      - ADMIN_API_KEY=api-key-server-a
+      - JWT_SECRET=jwt-secret-server-a-test123
+      - ENCRYPTION_KEY=encryption-key-serverA1
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/api/v1/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  # Server B: WireGuard-UI running netstack mode on subnet 10.1.0.0/24
+  server-b:
+    build:
+      context: ../../..
+    environment:
+      - WG_NETSTACK_MODE=true
+      - WG_USERSPACE_MODE=false
+      - WG_ENDPOINT=server-b:51821
+      - WG_ADDRESS=10.1.0.1/24
+      - WG_LISTEN_PORT=51821
+      - WG_DNS=1.1.1.1
+      - WG_DEFAULT_ALLOWED_IPS=10.1.0.0/24
+      - DATABASE_DRIVER=sqlite
+      - DATABASE_DSN=/data/wireguard.db
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=TestPassword1b
+      - ADMIN_API_KEY=api-key-server-b
+      - JWT_SECRET=jwt-secret-server-b-test123
+      - ENCRYPTION_KEY=encryption-key-serverB1
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/api/v1/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  # Test runner: creates tunnels between A and B, connects a client to A,
+  # verifies traffic flows from client through A's tunnel to B's subnet.
+  test-runner:
+    image: alpine:3.21
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    sysctls:
+      - net.ipv4.ip_forward=1
+    depends_on:
+      server-a:
+        condition: service_healthy
+      server-b:
+        condition: service_healthy
+    environment:
+      - SERVER_A_URL=http://server-a:8080
+      - SERVER_A_API_KEY=api-key-server-a
+      - SERVER_A_VPN_IP=10.0.0.1
+      - SERVER_B_URL=http://server-b:8080
+      - SERVER_B_API_KEY=api-key-server-b
+      - SERVER_B_VPN_IP=10.1.0.1
+    volumes:
+      - ./test-tunnel.sh:/test.sh:ro
+    entrypoint: ["/bin/sh", "/test.sh"]
