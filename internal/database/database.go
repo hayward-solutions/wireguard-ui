@@ -73,9 +73,11 @@ type Store interface {
 	RevokeUserSessions(ctx context.Context, userID string) error
 	CleanExpiredSessions(ctx context.Context) error
 
-	// Tunnels (stretch)
+	// Tunnels
 	ListTunnels(ctx context.Context) ([]domain.Tunnel, error)
+	ListEnabledTunnels(ctx context.Context) ([]domain.Tunnel, error)
 	GetTunnel(ctx context.Context, id string) (*domain.Tunnel, error)
+	GetTunnelByName(ctx context.Context, name string) (*domain.Tunnel, error)
 	CreateTunnel(ctx context.Context, t *domain.Tunnel) error
 	UpdateTunnel(ctx context.Context, t *domain.Tunnel) error
 	DeleteTunnel(ctx context.Context, id string) error

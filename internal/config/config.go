@@ -56,6 +56,9 @@ type Config struct {
 	// Encryption
 	EncryptionKey string
 
+	// Tunnels
+	TunnelPeers string // JSON array from TUNNEL_PEERS env var for first-boot
+
 	// Monitoring
 	StatsInterval time.Duration
 
@@ -96,6 +99,7 @@ func Load() (*Config, error) {
 		WGDNS:           envOrDefault("WG_DNS", "1.1.1.1,8.8.8.8"),
 		WGDefaultAllowedIPs: envOrDefault("WG_DEFAULT_ALLOWED_IPS", "0.0.0.0/0, ::/0"),
 		AdminUsername:        envOrDefault("ADMIN_USERNAME", "admin"),
+		TunnelPeers:     os.Getenv("TUNNEL_PEERS"),
 		AdminPassword:   os.Getenv("ADMIN_PASSWORD"),
 		AdminAPIKey:     os.Getenv("ADMIN_API_KEY"),
 		EncryptionKey:   os.Getenv("ENCRYPTION_KEY"),

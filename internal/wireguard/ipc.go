@@ -43,6 +43,10 @@ func buildIpcPeer(p *domain.Peer) (string, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "public_key=%s\n", hexPub)
 
+	if p.Endpoint != "" {
+		fmt.Fprintf(&b, "endpoint=%s\n", p.Endpoint)
+	}
+
 	if p.PresharedKey != "" {
 		hexPsk, err := keyToHex(p.PresharedKey)
 		if err != nil {

@@ -19,6 +19,7 @@ import (
 type RouterConfig struct {
 	Store        database.Store
 	WG           wireguard.Manager
+	TunnelManager *wireguard.TunnelManager
 	JWTManager   *auth.JWTManager
 	OIDCProvider *auth.OIDCProvider
 	Monitor      *monitor.Monitor
@@ -161,6 +162,20 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 			r.Get("/{id}", aclHandler.HandleGet)
 			r.Put("/{id}", aclHandler.HandleUpdate)
 			r.Delete("/{id}", aclHandler.HandleDelete)
+		})
+
+		// Tunnels (admin only)
+		tunnelHandler := NewTunnelHandler(cfg.Store, cfg.TunnelManager)
+		r.Route("/api/v1/tunnels", func(r chi.Router) {
+			r.Use(RequireAdmin)
+			r.Get("/", tunnelHandler.HandleList)
+			r.Post("/", tunnelHandler.HandleCreate)
+			r.Get("/{id}", tunnelHandler.HandleGet)
+			r.Put("/{id}", tunnelHandler.HandleUpdate)
+			r.Delete("/{id}", tunnelHandler.HandleDelete)
+			r.Patch("/{id}/toggle", tunnelHandler.HandleToggle)
+			r.Get("/{id}/config", tunnelHandler.HandleRemoteConfig)
+			r.Get("/{id}/status", tunnelHandler.HandleStatus)
 		})
 
 		// User management (admin only)

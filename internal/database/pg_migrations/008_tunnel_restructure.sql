@@ -1,0 +1,19 @@
+-- Restructure tunnels table: replace generic config JSON blob with structured WireGuard fields.
+
+-- Drop old columns and add new structured columns
+ALTER TABLE tunnels DROP COLUMN IF EXISTS type;
+ALTER TABLE tunnels DROP COLUMN IF EXISTS config;
+
+ALTER TABLE tunnels ADD COLUMN IF NOT EXISTS private_key TEXT NOT NULL DEFAULT '';
+ALTER TABLE tunnels ADD COLUMN IF NOT EXISTS public_key TEXT NOT NULL DEFAULT '';
+ALTER TABLE tunnels ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT '10.100.0.1/30';
+ALTER TABLE tunnels ADD COLUMN IF NOT EXISTS listen_port INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tunnels ADD COLUMN IF NOT EXISTS dns TEXT DEFAULT '';
+ALTER TABLE tunnels ADD COLUMN IF NOT EXISTS mtu INTEGER DEFAULT 1420;
+ALTER TABLE tunnels ADD COLUMN IF NOT EXISTS peer_public_key TEXT NOT NULL DEFAULT '';
+ALTER TABLE tunnels ADD COLUMN IF NOT EXISTS peer_endpoint TEXT DEFAULT '';
+ALTER TABLE tunnels ADD COLUMN IF NOT EXISTS preshared_key TEXT DEFAULT '';
+ALTER TABLE tunnels ADD COLUMN IF NOT EXISTS peer_allowed_ips TEXT NOT NULL DEFAULT '';
+ALTER TABLE tunnels ADD COLUMN IF NOT EXISTS persistent_keepalive INTEGER DEFAULT 25;
+
+DROP TABLE IF EXISTS tunnel_peers;

@@ -917,10 +917,27 @@ func (s *PostgresStore) GetEffectiveACLRules(ctx context.Context, userID string)
 
 // --- Tunnels ---
 
-func (s *PostgresStore) ListTunnels(ctx context.Context) ([]domain.Tunnel, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, type, description, config, enabled, created_at, updated_at
-		FROM tunnels ORDER BY created_at DESC`)
+const pgTunnelColumns = `id, name, description, private_key, public_key, address, listen_port,
+	dns, mtu, peer_public_key, peer_endpoint, preshared_key, peer_allowed_ips,
+	persistent_keepalive, enabled, created_at, updated_at`
+
+func pgScanTunnel(row interface{ Scan(dest ...any) error }) (*domain.Tunnel, error) {
+	var t domain.Tunnel
+	err := row.Scan(&t.ID, &t.Name, &t.Description, &t.PrivateKey, &t.PublicKey,
+		&t.Address, &t.ListenPort, &t.DNS, &t.MTU, &t.PeerPublicKey, &t.PeerEndpoint,
+		&t.PresharedKey, &t.PeerAllowedIPs, &t.PersistentKeepalive, &t.Enabled,
+		&t.CreatedAt, &t.UpdatedAt)
+	return &t, err
+}
+
+func (s *PostgresStore) listTunnelsWhere(ctx context.Context, where string, args ...any) ([]domain.Tunnel, error) {
+	query := `SELECT ` + pgTunnelColumns + ` FROM tunnels`
+	if where != "" {
+		query += ` WHERE ` + where
+	}
+	query += ` ORDER BY created_at DESC`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list tunnels: %w", err)
 	}
@@ -928,31 +945,49 @@ func (s *PostgresStore) ListTunnels(ctx context.Context) ([]domain.Tunnel, error
 
 	var tunnels []domain.Tunnel
 	for rows.Next() {
-		var t domain.Tunnel
-		if err := rows.Scan(&t.ID, &t.Name, &t.Type, &t.Description, &t.Config,
-			&t.Enabled, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		t, err := pgScanTunnel(rows)
+		if err != nil {
 			return nil, fmt.Errorf("scan tunnel: %w", err)
 		}
-		tunnels = append(tunnels, t)
+		tunnels = append(tunnels, *t)
 	}
 	return tunnels, rows.Err()
 }
 
-func (s *PostgresStore) GetTunnel(ctx context.Context, id string) (*domain.Tunnel, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, type, description, config, enabled, created_at, updated_at
-		FROM tunnels WHERE id = $1`, id)
+func (s *PostgresStore) ListTunnels(ctx context.Context) ([]domain.Tunnel, error) {
+	return s.listTunnelsWhere(ctx, "")
+}
 
-	var t domain.Tunnel
-	err := row.Scan(&t.ID, &t.Name, &t.Type, &t.Description, &t.Config,
-		&t.Enabled, &t.CreatedAt, &t.UpdatedAt)
+func (s *PostgresStore) ListEnabledTunnels(ctx context.Context) ([]domain.Tunnel, error) {
+	return s.listTunnelsWhere(ctx, "enabled = true")
+}
+
+func (s *PostgresStore) GetTunnel(ctx context.Context, id string) (*domain.Tunnel, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+pgTunnelColumns+` FROM tunnels WHERE id = $1`, id)
+
+	t, err := pgScanTunnel(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get tunnel: %w", err)
 	}
-	return &t, nil
+	return t, nil
+}
+
+func (s *PostgresStore) GetTunnelByName(ctx context.Context, name string) (*domain.Tunnel, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+pgTunnelColumns+` FROM tunnels WHERE name = $1`, name)
+
+	t, err := pgScanTunnel(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get tunnel by name: %w", err)
+	}
+	return t, nil
 }
 
 func (s *PostgresStore) CreateTunnel(ctx context.Context, t *domain.Tunnel) error {
@@ -960,9 +995,12 @@ func (s *PostgresStore) CreateTunnel(ctx context.Context, t *domain.Tunnel) erro
 	t.CreatedAt = now
 	t.UpdatedAt = now
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO tunnels (id, name, type, description, config, enabled, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		t.ID, t.Name, t.Type, t.Description, t.Config, t.Enabled, t.CreatedAt, t.UpdatedAt)
+		INSERT INTO tunnels (`+pgTunnelColumns+`)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+		t.ID, t.Name, t.Description, t.PrivateKey, t.PublicKey,
+		t.Address, t.ListenPort, t.DNS, t.MTU, t.PeerPublicKey, t.PeerEndpoint,
+		t.PresharedKey, t.PeerAllowedIPs, t.PersistentKeepalive, t.Enabled,
+		t.CreatedAt, t.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("create tunnel: %w", err)
 	}
@@ -972,10 +1010,17 @@ func (s *PostgresStore) CreateTunnel(ctx context.Context, t *domain.Tunnel) erro
 func (s *PostgresStore) UpdateTunnel(ctx context.Context, t *domain.Tunnel) error {
 	t.UpdatedAt = time.Now()
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE tunnels SET name = $1, type = $2, description = $3, config = $4,
-		       enabled = $5, updated_at = $6
-		WHERE id = $7`,
-		t.Name, t.Type, t.Description, t.Config, t.Enabled, t.UpdatedAt, t.ID)
+		UPDATE tunnels SET name = $1, description = $2, private_key = $3, public_key = $4,
+		       address = $5, listen_port = $6, dns = $7, mtu = $8,
+		       peer_public_key = $9, peer_endpoint = $10, preshared_key = $11,
+		       peer_allowed_ips = $12, persistent_keepalive = $13,
+		       enabled = $14, updated_at = $15
+		WHERE id = $16`,
+		t.Name, t.Description, t.PrivateKey, t.PublicKey,
+		t.Address, t.ListenPort, t.DNS, t.MTU,
+		t.PeerPublicKey, t.PeerEndpoint, t.PresharedKey,
+		t.PeerAllowedIPs, t.PersistentKeepalive,
+		t.Enabled, t.UpdatedAt, t.ID)
 	if err != nil {
 		return fmt.Errorf("update tunnel: %w", err)
 	}

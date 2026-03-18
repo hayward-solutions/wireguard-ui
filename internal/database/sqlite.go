@@ -909,10 +909,27 @@ func (s *SQLiteStore) GetEffectiveACLRules(ctx context.Context, userID string) (
 
 // --- Tunnels ---
 
-func (s *SQLiteStore) ListTunnels(ctx context.Context) ([]domain.Tunnel, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, type, description, config, enabled, created_at, updated_at
-		FROM tunnels ORDER BY created_at DESC`)
+const tunnelColumns = `id, name, description, private_key, public_key, address, listen_port,
+	dns, mtu, peer_public_key, peer_endpoint, preshared_key, peer_allowed_ips,
+	persistent_keepalive, enabled, created_at, updated_at`
+
+func scanTunnel(row interface{ Scan(dest ...any) error }) (*domain.Tunnel, error) {
+	var t domain.Tunnel
+	err := row.Scan(&t.ID, &t.Name, &t.Description, &t.PrivateKey, &t.PublicKey,
+		&t.Address, &t.ListenPort, &t.DNS, &t.MTU, &t.PeerPublicKey, &t.PeerEndpoint,
+		&t.PresharedKey, &t.PeerAllowedIPs, &t.PersistentKeepalive, &t.Enabled,
+		&t.CreatedAt, &t.UpdatedAt)
+	return &t, err
+}
+
+func (s *SQLiteStore) listTunnelsWhere(ctx context.Context, where string, args ...any) ([]domain.Tunnel, error) {
+	query := `SELECT ` + tunnelColumns + ` FROM tunnels`
+	if where != "" {
+		query += ` WHERE ` + where
+	}
+	query += ` ORDER BY created_at DESC`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list tunnels: %w", err)
 	}
@@ -920,31 +937,49 @@ func (s *SQLiteStore) ListTunnels(ctx context.Context) ([]domain.Tunnel, error) 
 
 	var tunnels []domain.Tunnel
 	for rows.Next() {
-		var t domain.Tunnel
-		if err := rows.Scan(&t.ID, &t.Name, &t.Type, &t.Description, &t.Config,
-			&t.Enabled, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		t, err := scanTunnel(rows)
+		if err != nil {
 			return nil, fmt.Errorf("scan tunnel: %w", err)
 		}
-		tunnels = append(tunnels, t)
+		tunnels = append(tunnels, *t)
 	}
 	return tunnels, rows.Err()
 }
 
-func (s *SQLiteStore) GetTunnel(ctx context.Context, id string) (*domain.Tunnel, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, type, description, config, enabled, created_at, updated_at
-		FROM tunnels WHERE id = ?`, id)
+func (s *SQLiteStore) ListTunnels(ctx context.Context) ([]domain.Tunnel, error) {
+	return s.listTunnelsWhere(ctx, "")
+}
 
-	var t domain.Tunnel
-	err := row.Scan(&t.ID, &t.Name, &t.Type, &t.Description, &t.Config,
-		&t.Enabled, &t.CreatedAt, &t.UpdatedAt)
+func (s *SQLiteStore) ListEnabledTunnels(ctx context.Context) ([]domain.Tunnel, error) {
+	return s.listTunnelsWhere(ctx, "enabled = 1")
+}
+
+func (s *SQLiteStore) GetTunnel(ctx context.Context, id string) (*domain.Tunnel, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+tunnelColumns+` FROM tunnels WHERE id = ?`, id)
+
+	t, err := scanTunnel(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get tunnel: %w", err)
 	}
-	return &t, nil
+	return t, nil
+}
+
+func (s *SQLiteStore) GetTunnelByName(ctx context.Context, name string) (*domain.Tunnel, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+tunnelColumns+` FROM tunnels WHERE name = ?`, name)
+
+	t, err := scanTunnel(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get tunnel by name: %w", err)
+	}
+	return t, nil
 }
 
 func (s *SQLiteStore) CreateTunnel(ctx context.Context, t *domain.Tunnel) error {
@@ -952,9 +987,12 @@ func (s *SQLiteStore) CreateTunnel(ctx context.Context, t *domain.Tunnel) error 
 	t.CreatedAt = now
 	t.UpdatedAt = now
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO tunnels (id, name, type, description, config, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		t.ID, t.Name, t.Type, t.Description, t.Config, t.Enabled, t.CreatedAt, t.UpdatedAt)
+		INSERT INTO tunnels (`+tunnelColumns+`)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		t.ID, t.Name, t.Description, t.PrivateKey, t.PublicKey,
+		t.Address, t.ListenPort, t.DNS, t.MTU, t.PeerPublicKey, t.PeerEndpoint,
+		t.PresharedKey, t.PeerAllowedIPs, t.PersistentKeepalive, t.Enabled,
+		t.CreatedAt, t.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("create tunnel: %w", err)
 	}
@@ -964,10 +1002,17 @@ func (s *SQLiteStore) CreateTunnel(ctx context.Context, t *domain.Tunnel) error 
 func (s *SQLiteStore) UpdateTunnel(ctx context.Context, t *domain.Tunnel) error {
 	t.UpdatedAt = time.Now()
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE tunnels SET name = ?, type = ?, description = ?, config = ?,
+		UPDATE tunnels SET name = ?, description = ?, private_key = ?, public_key = ?,
+		       address = ?, listen_port = ?, dns = ?, mtu = ?,
+		       peer_public_key = ?, peer_endpoint = ?, preshared_key = ?,
+		       peer_allowed_ips = ?, persistent_keepalive = ?,
 		       enabled = ?, updated_at = ?
 		WHERE id = ?`,
-		t.Name, t.Type, t.Description, t.Config, t.Enabled, t.UpdatedAt, t.ID)
+		t.Name, t.Description, t.PrivateKey, t.PublicKey,
+		t.Address, t.ListenPort, t.DNS, t.MTU,
+		t.PeerPublicKey, t.PeerEndpoint, t.PresharedKey,
+		t.PeerAllowedIPs, t.PersistentKeepalive,
+		t.Enabled, t.UpdatedAt, t.ID)
 	if err != nil {
 		return fmt.Errorf("update tunnel: %w", err)
 	}
