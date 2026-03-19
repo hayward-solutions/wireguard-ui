@@ -366,7 +366,7 @@ func (s *SQLiteStore) DeletePeer(ctx context.Context, id string) error {
 
 func (s *SQLiteStore) ListUsers(ctx context.Context) ([]domain.User, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, username, password_hash, name, role, last_login,
+		SELECT id, username, password_hash, name, role, mfa_enabled, last_login,
 		       failed_login_attempts, locked_until, created_at
 		FROM users ORDER BY created_at`)
 	if err != nil {
@@ -377,7 +377,7 @@ func (s *SQLiteStore) ListUsers(ctx context.Context) ([]domain.User, error) {
 	var users []domain.User
 	for rows.Next() {
 		var u domain.User
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.LastLogin,
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.MFAEnabled, &u.LastLogin,
 			&u.FailedLoginAttempts, &u.LockedUntil, &u.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan user: %w", err)
 		}
@@ -388,12 +388,12 @@ func (s *SQLiteStore) ListUsers(ctx context.Context) ([]domain.User, error) {
 
 func (s *SQLiteStore) GetUser(ctx context.Context, id string) (*domain.User, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, username, password_hash, name, role, last_login,
+		SELECT id, username, password_hash, name, role, mfa_enabled, last_login,
 		       failed_login_attempts, locked_until, created_at
 		FROM users WHERE id = ?`, id)
 
 	var u domain.User
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.LastLogin,
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.MFAEnabled, &u.LastLogin,
 		&u.FailedLoginAttempts, &u.LockedUntil, &u.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -406,12 +406,12 @@ func (s *SQLiteStore) GetUser(ctx context.Context, id string) (*domain.User, err
 
 func (s *SQLiteStore) GetUserByUsername(ctx context.Context, username string) (*domain.User, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, username, password_hash, name, role, last_login,
+		SELECT id, username, password_hash, name, role, mfa_enabled, last_login,
 		       failed_login_attempts, locked_until, created_at
 		FROM users WHERE username = ?`, username)
 
 	var u domain.User
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.LastLogin,
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.MFAEnabled, &u.LastLogin,
 		&u.FailedLoginAttempts, &u.LockedUntil, &u.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -780,7 +780,7 @@ func (s *SQLiteStore) SyncOIDCGroups(ctx context.Context, userID string, groupID
 
 func (s *SQLiteStore) GetGroupMembers(ctx context.Context, groupID string) ([]domain.User, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT u.id, u.username, u.password_hash, u.name, u.role, u.last_login, u.created_at
+		SELECT u.id, u.username, u.password_hash, u.name, u.role, u.mfa_enabled, u.last_login, u.created_at
 		FROM users u
 		JOIN user_groups ug ON ug.user_id = u.id
 		WHERE ug.group_id = ?
@@ -793,7 +793,7 @@ func (s *SQLiteStore) GetGroupMembers(ctx context.Context, groupID string) ([]do
 	var users []domain.User
 	for rows.Next() {
 		var u domain.User
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.LastLogin, &u.CreatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.MFAEnabled, &u.LastLogin, &u.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan user: %w", err)
 		}
 		users = append(users, u)
@@ -1086,6 +1086,205 @@ func (s *SQLiteStore) DeleteTunnel(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM tunnels WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete tunnel: %w", err)
+	}
+	return nil
+}
+
+// --- MFA: WebAuthn Credentials ---
+
+func (s *SQLiteStore) ListWebAuthnCredentials(ctx context.Context, userID string) ([]domain.WebAuthnCredential, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, user_id, credential_id, public_key, attestation_type, aaguid,
+		       sign_count, transports, name, created_at, last_used_at
+		FROM user_webauthn_credentials WHERE user_id = ? ORDER BY created_at`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list webauthn credentials: %w", err)
+	}
+	defer rows.Close()
+
+	var creds []domain.WebAuthnCredential
+	for rows.Next() {
+		var c domain.WebAuthnCredential
+		var transportsJSON string
+		if err := rows.Scan(&c.ID, &c.UserID, &c.CredentialID, &c.PublicKey, &c.AttestationType,
+			&c.AAGUID, &c.SignCount, &transportsJSON, &c.Name, &c.CreatedAt, &c.LastUsedAt); err != nil {
+			return nil, fmt.Errorf("scan webauthn credential: %w", err)
+		}
+		_ = json.Unmarshal([]byte(transportsJSON), &c.Transports)
+		creds = append(creds, c)
+	}
+	return creds, rows.Err()
+}
+
+func (s *SQLiteStore) GetWebAuthnCredentialByCredentialID(ctx context.Context, credentialID string) (*domain.WebAuthnCredential, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, user_id, credential_id, public_key, attestation_type, aaguid,
+		       sign_count, transports, name, created_at, last_used_at
+		FROM user_webauthn_credentials WHERE credential_id = ?`, credentialID)
+
+	var c domain.WebAuthnCredential
+	var transportsJSON string
+	err := row.Scan(&c.ID, &c.UserID, &c.CredentialID, &c.PublicKey, &c.AttestationType,
+		&c.AAGUID, &c.SignCount, &transportsJSON, &c.Name, &c.CreatedAt, &c.LastUsedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get webauthn credential: %w", err)
+	}
+	_ = json.Unmarshal([]byte(transportsJSON), &c.Transports)
+	return &c, nil
+}
+
+func (s *SQLiteStore) CreateWebAuthnCredential(ctx context.Context, cred *domain.WebAuthnCredential) error {
+	transportsJSON, _ := json.Marshal(cred.Transports)
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO user_webauthn_credentials (id, user_id, credential_id, public_key, attestation_type, aaguid, sign_count, transports, name, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		cred.ID, cred.UserID, cred.CredentialID, cred.PublicKey, cred.AttestationType,
+		cred.AAGUID, cred.SignCount, string(transportsJSON), cred.Name, cred.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("create webauthn credential: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) UpdateWebAuthnSignCount(ctx context.Context, credentialID string, signCount uint32) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE user_webauthn_credentials SET sign_count = ?, last_used_at = CURRENT_TIMESTAMP
+		WHERE credential_id = ?`, signCount, credentialID)
+	if err != nil {
+		return fmt.Errorf("update webauthn sign count: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) DeleteWebAuthnCredential(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM user_webauthn_credentials WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete webauthn credential: %w", err)
+	}
+	return nil
+}
+
+// --- MFA: TOTP ---
+
+func (s *SQLiteStore) GetUserTOTP(ctx context.Context, userID string) (*domain.UserTOTP, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT user_id, secret, verified, created_at
+		FROM user_totp WHERE user_id = ?`, userID)
+
+	var t domain.UserTOTP
+	var encSecret string
+	err := row.Scan(&t.UserID, &encSecret, &t.Verified, &t.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get user totp: %w", err)
+	}
+	if s.encryptor != nil {
+		t.Secret, err = s.encryptor.Decrypt(encSecret)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt totp secret: %w", err)
+		}
+	} else {
+		t.Secret = encSecret
+	}
+	return &t, nil
+}
+
+func (s *SQLiteStore) CreateUserTOTP(ctx context.Context, totp *domain.UserTOTP) error {
+	secret := totp.Secret
+	if s.encryptor != nil {
+		var err error
+		secret, err = s.encryptor.Encrypt(secret)
+		if err != nil {
+			return fmt.Errorf("encrypt totp secret: %w", err)
+		}
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO user_totp (user_id, secret, verified, created_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(user_id) DO UPDATE SET secret = excluded.secret, verified = excluded.verified`,
+		totp.UserID, secret, totp.Verified, totp.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("create user totp: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) VerifyUserTOTP(ctx context.Context, userID string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE user_totp SET verified = 1 WHERE user_id = ?`, userID)
+	if err != nil {
+		return fmt.Errorf("verify user totp: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) DeleteUserTOTP(ctx context.Context, userID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM user_totp WHERE user_id = ?`, userID)
+	if err != nil {
+		return fmt.Errorf("delete user totp: %w", err)
+	}
+	return nil
+}
+
+// --- MFA: Settings ---
+
+func (s *SQLiteStore) SetMFAEnabled(ctx context.Context, userID string, enabled bool) error {
+	val := 0
+	if enabled {
+		val = 1
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET mfa_enabled = ? WHERE id = ?`, val, userID)
+	if err != nil {
+		return fmt.Errorf("set mfa enabled: %w", err)
+	}
+	return nil
+}
+
+// --- MFA: Challenges ---
+
+func (s *SQLiteStore) CreateMFAChallenge(ctx context.Context, challenge *domain.MFAChallenge) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO mfa_challenges (id, user_id, created_at, expires_at, used)
+		VALUES (?, ?, ?, ?, 0)`,
+		challenge.ID, challenge.UserID, challenge.CreatedAt, challenge.ExpiresAt)
+	if err != nil {
+		return fmt.Errorf("create mfa challenge: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) GetMFAChallenge(ctx context.Context, id string) (*domain.MFAChallenge, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, user_id, created_at, expires_at, used
+		FROM mfa_challenges WHERE id = ?`, id)
+
+	var c domain.MFAChallenge
+	err := row.Scan(&c.ID, &c.UserID, &c.CreatedAt, &c.ExpiresAt, &c.Used)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get mfa challenge: %w", err)
+	}
+	return &c, nil
+}
+
+func (s *SQLiteStore) UseMFAChallenge(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE mfa_challenges SET used = 1 WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("use mfa challenge: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) CleanExpiredMFAChallenges(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM mfa_challenges WHERE expires_at < CURRENT_TIMESTAMP OR used = 1`)
+	if err != nil {
+		return fmt.Errorf("clean expired mfa challenges: %w", err)
 	}
 	return nil
 }

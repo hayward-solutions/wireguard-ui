@@ -195,6 +195,30 @@ func (s *mockStore) HasEncryptedData(_ context.Context) (bool, error) { return f
 func (s *mockStore) Migrate(_ context.Context) error                  { return nil }
 func (s *mockStore) Close() error                                     { return nil }
 
+// MFA stubs
+func (s *mockStore) ListWebAuthnCredentials(_ context.Context, _ string) ([]domain.WebAuthnCredential, error) {
+	return nil, nil
+}
+func (s *mockStore) GetWebAuthnCredentialByCredentialID(_ context.Context, _ string) (*domain.WebAuthnCredential, error) {
+	return nil, nil
+}
+func (s *mockStore) CreateWebAuthnCredential(_ context.Context, _ *domain.WebAuthnCredential) error {
+	return nil
+}
+func (s *mockStore) UpdateWebAuthnSignCount(_ context.Context, _ string, _ uint32) error { return nil }
+func (s *mockStore) DeleteWebAuthnCredential(_ context.Context, _ string) error          { return nil }
+func (s *mockStore) GetUserTOTP(_ context.Context, _ string) (*domain.UserTOTP, error)   { return nil, nil }
+func (s *mockStore) CreateUserTOTP(_ context.Context, _ *domain.UserTOTP) error          { return nil }
+func (s *mockStore) VerifyUserTOTP(_ context.Context, _ string) error                    { return nil }
+func (s *mockStore) DeleteUserTOTP(_ context.Context, _ string) error                    { return nil }
+func (s *mockStore) SetMFAEnabled(_ context.Context, _ string, _ bool) error             { return nil }
+func (s *mockStore) CreateMFAChallenge(_ context.Context, _ *domain.MFAChallenge) error  { return nil }
+func (s *mockStore) GetMFAChallenge(_ context.Context, _ string) (*domain.MFAChallenge, error) {
+	return nil, nil
+}
+func (s *mockStore) UseMFAChallenge(_ context.Context, _ string) error    { return nil }
+func (s *mockStore) CleanExpiredMFAChallenges(_ context.Context) error    { return nil }
+
 // --- Mock WireGuard Manager ---
 
 type mockWG struct{}

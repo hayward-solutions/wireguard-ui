@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api, type APIToken, type APITokenCreateResponse } from '$lib/api';
+	import { api, type APIToken, type APITokenCreateResponse, type MFAStatus, type WebAuthnCredentialInfo } from '$lib/api';
 	import { user } from '$lib/stores/auth';
-	import { Plus, Trash2, Copy, Check, X, Eye, EyeOff } from 'lucide-svelte';
+	import { Plus, Trash2, Copy, Check, X, Eye, EyeOff, KeyRound, Shield, Smartphone } from 'lucide-svelte';
 	import { get } from 'svelte/store';
+	import { startRegistration } from '@simplewebauthn/browser';
+	import QRCode from 'qrcode';
 
 	// User info
 	let profile = $derived(get(user));
@@ -17,6 +19,29 @@
 	let passwordLoading = $state(false);
 	let showCurrentPassword = $state(false);
 	let showNewPassword = $state(false);
+
+	// MFA
+	let mfaStatus = $state<MFAStatus | null>(null);
+	let mfaLoading = $state(true);
+	let mfaError = $state('');
+	let mfaSuccess = $state('');
+
+	// WebAuthn registration
+	let showWebAuthnNameModal = $state(false);
+	let webauthnName = $state('');
+	let webauthnRegistering = $state(false);
+
+	// TOTP enrollment
+	let showTOTPEnroll = $state(false);
+	let totpSecret = $state('');
+	let totpQrUri = $state('');
+	let totpQrDataUrl = $state('');
+	let totpCode = $state('');
+	let totpEnrolling = $state(false);
+
+	// Delete confirm
+	let deleteWebAuthnCred = $state<WebAuthnCredentialInfo | null>(null);
+	let deleteTOTPConfirm = $state(false);
 
 	// API Tokens
 	let tokens = $state<APIToken[]>([]);
@@ -32,7 +57,7 @@
 	let newToken = $state<APITokenCreateResponse | null>(null);
 	let copied = $state(false);
 
-	// Delete confirm
+	// Delete confirm (tokens)
 	let deleteToken = $state<APIToken | null>(null);
 
 	async function handleChangePassword() {
@@ -61,6 +86,101 @@
 			passwordLoading = false;
 		}
 	}
+
+	// --- MFA ---
+
+	async function loadMFAStatus() {
+		try {
+			mfaStatus = await api.getMFAStatus();
+		} catch (e: any) {
+			mfaError = e.message;
+		} finally {
+			mfaLoading = false;
+		}
+	}
+
+	async function handleWebAuthnRegister() {
+		mfaError = '';
+		mfaSuccess = '';
+		webauthnRegistering = true;
+		try {
+			const { challenge_id, options } = await api.webauthnRegisterBegin();
+			const attestation = await startRegistration({ optionsJSON: options });
+			const name = webauthnName || 'Security Key';
+			await api.webauthnRegisterFinish(challenge_id, name, attestation);
+			mfaSuccess = 'Security key registered successfully';
+			showWebAuthnNameModal = false;
+			webauthnName = '';
+			await loadMFAStatus();
+		} catch (e: any) {
+			if (e.name === 'NotAllowedError') {
+				mfaError = 'Registration was cancelled or timed out';
+			} else {
+				mfaError = e.message || 'Failed to register security key';
+			}
+		} finally {
+			webauthnRegistering = false;
+		}
+	}
+
+	async function handleDeleteWebAuthn() {
+		if (!deleteWebAuthnCred) return;
+		try {
+			await api.deleteWebAuthnCredential(deleteWebAuthnCred.id);
+			deleteWebAuthnCred = null;
+			mfaSuccess = 'Security key removed';
+			await loadMFAStatus();
+		} catch (e: any) {
+			mfaError = e.message;
+		}
+	}
+
+	async function handleTOTPEnroll() {
+		mfaError = '';
+		totpEnrolling = true;
+		try {
+			const { secret, qr_uri } = await api.totpEnroll();
+			totpSecret = secret;
+			totpQrUri = qr_uri;
+			totpQrDataUrl = await QRCode.toDataURL(qr_uri, { width: 200, margin: 2 });
+			showTOTPEnroll = true;
+		} catch (e: any) {
+			mfaError = e.message;
+		} finally {
+			totpEnrolling = false;
+		}
+	}
+
+	async function handleTOTPVerify(e: Event) {
+		e.preventDefault();
+		mfaError = '';
+		totpEnrolling = true;
+		try {
+			await api.totpVerify(totpCode);
+			mfaSuccess = 'Authenticator app configured successfully';
+			showTOTPEnroll = false;
+			totpCode = '';
+			totpSecret = '';
+			await loadMFAStatus();
+		} catch (e: any) {
+			mfaError = e.message;
+		} finally {
+			totpEnrolling = false;
+		}
+	}
+
+	async function handleDeleteTOTP() {
+		try {
+			await api.totpDelete();
+			deleteTOTPConfirm = false;
+			mfaSuccess = 'Authenticator app removed';
+			await loadMFAStatus();
+		} catch (e: any) {
+			mfaError = e.message;
+		}
+	}
+
+	// --- Tokens ---
 
 	async function loadTokens() {
 		try {
@@ -104,7 +224,10 @@
 		setTimeout(() => (copied = false), 2000);
 	}
 
-	onMount(loadTokens);
+	onMount(() => {
+		loadTokens();
+		loadMFAStatus();
+	});
 </script>
 
 <div class="space-y-8">
@@ -184,6 +307,100 @@
 				</button>
 			</div>
 		</form>
+	</div>
+
+	<!-- Multi-Factor Authentication -->
+	<div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
+		<div class="flex items-center gap-3">
+			<Shield size={20} class="text-zinc-600 dark:text-zinc-400" />
+			<div>
+				<h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Multi-Factor Authentication</h2>
+				<p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Add extra security to your account</p>
+			</div>
+			{#if mfaStatus?.mfa_enabled}
+				<span class="ml-auto inline-flex rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-200">Enabled</span>
+			{/if}
+		</div>
+
+		{#if mfaError}
+			<div class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">{mfaError}</div>
+		{/if}
+		{#if mfaSuccess}
+			<div class="mt-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400">{mfaSuccess}</div>
+		{/if}
+
+		{#if mfaLoading}
+			<div class="mt-6 text-center text-zinc-400 dark:text-zinc-500">Loading...</div>
+		{:else if mfaStatus}
+			<!-- Security Keys (WebAuthn) -->
+			<div class="mt-6">
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-2">
+						<KeyRound size={16} class="text-zinc-500 dark:text-zinc-400" />
+						<h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Security Keys</h3>
+					</div>
+					<button onclick={() => { showWebAuthnNameModal = true; webauthnName = ''; mfaError = ''; mfaSuccess = ''; }}
+						class="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">
+						<Plus size={14} />
+						Add key
+					</button>
+				</div>
+
+				{#if mfaStatus.webauthn_credentials.length > 0}
+					<div class="mt-3 divide-y divide-zinc-100 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-700">
+						{#each mfaStatus.webauthn_credentials as cred (cred.id)}
+							<div class="flex items-center justify-between px-4 py-3">
+								<div>
+									<p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{cred.name}</p>
+									<p class="text-xs text-zinc-500 dark:text-zinc-400">
+										Added {new Date(cred.created_at).toLocaleDateString()}
+										{#if cred.last_used_at}
+											&middot; Last used {new Date(cred.last_used_at).toLocaleDateString()}
+										{/if}
+									</p>
+								</div>
+								<button onclick={() => (deleteWebAuthnCred = cred)} title="Remove"
+									class="rounded p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600 dark:text-zinc-500 dark:hover:bg-red-950 dark:hover:text-red-400">
+									<Trash2 size={15} />
+								</button>
+							</div>
+						{/each}
+					</div>
+				{:else}
+					<p class="mt-3 text-sm text-zinc-500 dark:text-zinc-400">No security keys registered. Add one to enable passwordless login.</p>
+				{/if}
+			</div>
+
+			<!-- Authenticator App (TOTP) -->
+			<div class="mt-6">
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-2">
+						<Smartphone size={16} class="text-zinc-500 dark:text-zinc-400" />
+						<h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Authenticator App</h3>
+					</div>
+					{#if mfaStatus.totp_enrolled}
+						<button onclick={() => { deleteTOTPConfirm = true; mfaError = ''; mfaSuccess = ''; }}
+							class="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950">
+							<Trash2 size={14} />
+							Remove
+						</button>
+					{:else}
+						<button onclick={() => { mfaError = ''; mfaSuccess = ''; handleTOTPEnroll(); }}
+							disabled={totpEnrolling}
+							class="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">
+							<Plus size={14} />
+							Set up
+						</button>
+					{/if}
+				</div>
+
+				{#if mfaStatus.totp_enrolled}
+					<p class="mt-3 text-sm text-green-600 dark:text-green-400">Authenticator app is configured.</p>
+				{:else}
+					<p class="mt-3 text-sm text-zinc-500 dark:text-zinc-400">Use an authenticator app like Google Authenticator or Authy for time-based codes.</p>
+				{/if}
+			</div>
+		{/if}
 	</div>
 
 	<!-- API Tokens -->
@@ -316,6 +533,109 @@
 					class="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">Cancel</button>
 				<button onclick={handleDeleteToken}
 					class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Delete</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- WebAuthn Name Modal -->
+{#if showWebAuthnNameModal}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60" onclick={() => (showWebAuthnNameModal = false)}>
+		<div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-zinc-900" onclick={(e) => e.stopPropagation()}>
+			<div class="flex items-center justify-between">
+				<h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Add Security Key</h2>
+				<button onclick={() => (showWebAuthnNameModal = false)} class="text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"><X size={20} /></button>
+			</div>
+			<form onsubmit={(e) => { e.preventDefault(); handleWebAuthnRegister(); }} class="mt-4 space-y-4">
+				<div>
+					<label for="webauthn-name" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Key Name</label>
+					<input id="webauthn-name" type="text" bind:value={webauthnName} placeholder="e.g. YubiKey 5"
+						class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-500" />
+					<p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Give your key a name to identify it later</p>
+				</div>
+				<div class="flex justify-end gap-3 pt-2">
+					<button type="button" onclick={() => (showWebAuthnNameModal = false)}
+						class="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">Cancel</button>
+					<button type="submit" disabled={webauthnRegistering}
+						class="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">
+						{webauthnRegistering ? 'Registering...' : 'Register Key'}
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
+<!-- TOTP Enrollment Modal -->
+{#if showTOTPEnroll}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60" onclick={() => (showTOTPEnroll = false)}>
+		<div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-zinc-900" onclick={(e) => e.stopPropagation()}>
+			<div class="flex items-center justify-between">
+				<h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Set Up Authenticator App</h2>
+				<button onclick={() => (showTOTPEnroll = false)} class="text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"><X size={20} /></button>
+			</div>
+			<div class="mt-4 space-y-4">
+				<p class="text-sm text-zinc-500 dark:text-zinc-400">Scan this QR code with your authenticator app, then enter the code below to verify.</p>
+
+				{#if totpQrDataUrl}
+					<div class="flex justify-center">
+						<img src={totpQrDataUrl} alt="TOTP QR Code" class="rounded-lg" />
+					</div>
+				{/if}
+
+				<div>
+					<p class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Or enter this key manually:</p>
+					<code class="mt-1 block break-all rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100">{totpSecret}</code>
+				</div>
+
+				<form onsubmit={handleTOTPVerify} class="space-y-4">
+					<div>
+						<label for="totp-verify-code" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Verification Code</label>
+						<input id="totp-verify-code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" required bind:value={totpCode}
+							placeholder="000000"
+							class="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-center text-lg tracking-widest focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-500" />
+					</div>
+					<div class="flex justify-end gap-3">
+						<button type="button" onclick={() => (showTOTPEnroll = false)}
+							class="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">Cancel</button>
+						<button type="submit" disabled={totpEnrolling}
+							class="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">
+							{totpEnrolling ? 'Verifying...' : 'Verify & Enable'}
+						</button>
+					</div>
+				</form>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Delete WebAuthn Credential Confirm -->
+{#if deleteWebAuthnCred}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60" onclick={() => (deleteWebAuthnCred = null)}>
+		<div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-zinc-900" onclick={(e) => e.stopPropagation()}>
+			<h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Remove Security Key</h2>
+			<p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Are you sure you want to remove <strong>{deleteWebAuthnCred.name}</strong>? You won't be able to use it for authentication anymore.</p>
+			<div class="mt-6 flex justify-end gap-3">
+				<button onclick={() => (deleteWebAuthnCred = null)}
+					class="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">Cancel</button>
+				<button onclick={handleDeleteWebAuthn}
+					class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Remove</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Delete TOTP Confirm -->
+{#if deleteTOTPConfirm}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60" onclick={() => (deleteTOTPConfirm = false)}>
+		<div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-zinc-900" onclick={(e) => e.stopPropagation()}>
+			<h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Remove Authenticator App</h2>
+			<p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Are you sure you want to remove your authenticator app? You'll no longer be able to use it for two-factor authentication.</p>
+			<div class="mt-6 flex justify-end gap-3">
+				<button onclick={() => (deleteTOTPConfirm = false)}
+					class="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">Cancel</button>
+				<button onclick={handleDeleteTOTP}
+					class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Remove</button>
 			</div>
 		</div>
 	</div>

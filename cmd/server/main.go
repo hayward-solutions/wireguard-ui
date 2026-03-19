@@ -309,12 +309,28 @@ func run() error {
 				if err := store.DeleteExpiredAPITokens(context.Background()); err != nil {
 					slog.Error("failed to clean expired API tokens", "error", err)
 				}
+				if err := store.CleanExpiredMFAChallenges(context.Background()); err != nil {
+					slog.Error("failed to clean expired MFA challenges", "error", err)
+				}
 			}
 		}
 	}()
 
 	// Initialize JWT manager
 	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiry)
+
+	// Initialize WebAuthn provider
+	webauthnProvider, err := auth.NewWebAuthnProvider(cfg.BaseURL)
+	if err != nil {
+		slog.Error("failed to init webauthn provider", "error", err)
+		// Non-fatal: MFA features will be unavailable
+		webauthnProvider = nil
+	} else {
+		slog.Info("webauthn provider initialized", "rp_id", webauthnProvider.RPID())
+	}
+
+	// Initialize TOTP provider
+	totpProvider := &auth.TOTPProvider{}
 
 	// Initialize OIDC provider (optional)
 	var oidcProvider *auth.OIDCProvider
@@ -343,6 +359,8 @@ func run() error {
 		TunnelManager:       tunnelMgr,
 		JWTManager:          jwtMgr,
 		OIDCProvider:        oidcProvider,
+		WebAuthn:            webauthnProvider,
+		TOTP:                totpProvider,
 		Monitor:             mon,
 		PolicyEngine:        policyEngine,
 		FrontendFS:          frontendFS,

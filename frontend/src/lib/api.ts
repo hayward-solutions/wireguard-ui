@@ -293,6 +293,39 @@ class APIClient {
 	getTunnelRemoteConfigURL(id: string) {
 		return `/api/v1/tunnels/${id}/config`;
 	}
+
+	// MFA Management (authenticated)
+	async getMFAStatus() {
+		return this.request<MFAStatus>('GET', '/api/v1/me/mfa');
+	}
+
+	async webauthnRegisterBegin() {
+		return this.request<{ challenge_id: string; options: PublicKeyCredentialCreationOptionsJSON }>('POST', '/api/v1/me/mfa/webauthn/register/begin');
+	}
+
+	async webauthnRegisterFinish(challengeId: string, name: string, response: unknown) {
+		return this.request<{ id: string; name: string }>('POST', '/api/v1/me/mfa/webauthn/register/finish', {
+			challenge_id: challengeId,
+			name,
+			response
+		});
+	}
+
+	async deleteWebAuthnCredential(id: string) {
+		return this.request<void>('DELETE', `/api/v1/me/mfa/webauthn/${id}`);
+	}
+
+	async totpEnroll() {
+		return this.request<{ secret: string; qr_uri: string }>('POST', '/api/v1/me/mfa/totp/enroll');
+	}
+
+	async totpVerify(code: string) {
+		return this.request<{ message: string }>('POST', '/api/v1/me/mfa/totp/verify', { code });
+	}
+
+	async totpDelete() {
+		return this.request<void>('DELETE', '/api/v1/me/mfa/totp');
+	}
 }
 
 export interface ServerConfig {
@@ -437,5 +470,29 @@ export interface CreateTunnelRequest {
 export interface CreateTunnelResponse extends Tunnel {
 	preshared_key?: string;
 }
+
+// MFA Types
+export interface MFAStatus {
+	mfa_enabled: boolean;
+	webauthn_credentials: WebAuthnCredentialInfo[];
+	totp_enrolled: boolean;
+}
+
+export interface WebAuthnCredentialInfo {
+	id: string;
+	name: string;
+	created_at: string;
+	last_used_at: string | null;
+}
+
+export interface LoginResponse {
+	user?: { id: string; username: string; name: string; role: string };
+	mfa_required?: boolean;
+	mfa_token?: string;
+	mfa_methods?: string[];
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type PublicKeyCredentialCreationOptionsJSON = any;
 
 export const api = new APIClient();

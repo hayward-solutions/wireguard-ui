@@ -18,37 +18,40 @@ import (
 )
 
 type AuthHandler struct {
-	oidc           *auth.OIDCProvider
-	jwt            *auth.JWTManager
-	store          database.Store
-	loginLimiter   *auth.RateLimiter
-	oidcAdminGroup string
-	secureCookie   bool
-	sessionExpiry  time.Duration
-	policyEngine   *acl.PolicyEngine
+	oidc            *auth.OIDCProvider
+	jwt             *auth.JWTManager
+	store           database.Store
+	loginLimiter    *auth.RateLimiter
+	oidcAdminGroup  string
+	secureCookie    bool
+	sessionExpiry   time.Duration
+	policyEngine    *acl.PolicyEngine
+	webauthnEnabled bool
 }
 
 type AuthHandlerConfig struct {
-	OIDC           *auth.OIDCProvider
-	JWT            *auth.JWTManager
-	Store          database.Store
-	LoginLimiter   *auth.RateLimiter
-	OIDCAdminGroup string
-	SecureCookie   bool
-	SessionExpiry  time.Duration
-	PolicyEngine   *acl.PolicyEngine
+	OIDC            *auth.OIDCProvider
+	JWT             *auth.JWTManager
+	Store           database.Store
+	LoginLimiter    *auth.RateLimiter
+	OIDCAdminGroup  string
+	SecureCookie    bool
+	SessionExpiry   time.Duration
+	PolicyEngine    *acl.PolicyEngine
+	WebAuthnEnabled bool
 }
 
 func NewAuthHandler(cfg AuthHandlerConfig) *AuthHandler {
 	return &AuthHandler{
-		oidc:           cfg.OIDC,
-		jwt:            cfg.JWT,
-		store:          cfg.Store,
-		loginLimiter:   cfg.LoginLimiter,
-		oidcAdminGroup: cfg.OIDCAdminGroup,
-		secureCookie:   cfg.SecureCookie,
-		sessionExpiry:  cfg.SessionExpiry,
-		policyEngine:   cfg.PolicyEngine,
+		oidc:            cfg.OIDC,
+		jwt:             cfg.JWT,
+		store:           cfg.Store,
+		loginLimiter:    cfg.LoginLimiter,
+		oidcAdminGroup:  cfg.OIDCAdminGroup,
+		secureCookie:    cfg.SecureCookie,
+		sessionExpiry:   cfg.SessionExpiry,
+		policyEngine:    cfg.PolicyEngine,
+		webauthnEnabled: cfg.WebAuthnEnabled,
 	}
 }
 
@@ -136,6 +139,30 @@ func (h *AuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to update last login", "error", err)
 	}
 
+	// Check if MFA is required
+	if user.MFAEnabled {
+		challenge := &domain.MFAChallenge{
+			ID:        uuid.New().String(),
+			UserID:    user.ID,
+			CreatedAt: time.Now(),
+			ExpiresAt: time.Now().Add(5 * time.Minute),
+		}
+		if err := h.store.CreateMFAChallenge(r.Context(), challenge); err != nil {
+			slog.Error("failed to create MFA challenge", "error", err)
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to create MFA challenge")
+			return
+		}
+
+		slog.Warn("audit", "action", "login_mfa_required", "actor", user.ID, "target_name", user.Username, "method", "local")
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"mfa_required": true,
+			"mfa_token":    challenge.ID,
+			"mfa_methods":  getMFAMethods(r, h.store, user.ID),
+		})
+		return
+	}
+
 	h.issueSessionAndToken(w, r, user)
 
 	slog.Warn("audit", "action", "login_success", "actor", user.ID, "target_name", user.Username, "method", "local")
@@ -153,8 +180,9 @@ func (h *AuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
 // HandleAuthInfo returns what auth methods are available.
 func (h *AuthHandler) HandleAuthInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"oidc_enabled":  h.oidc != nil,
-		"local_enabled": true,
+		"oidc_enabled":     h.oidc != nil,
+		"local_enabled":    true,
+		"webauthn_enabled": h.webauthnEnabled,
 	})
 }
 
