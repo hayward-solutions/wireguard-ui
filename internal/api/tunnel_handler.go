@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -93,12 +94,13 @@ func validateDNS(s string) error {
 }
 
 type TunnelHandler struct {
-	store     database.Store
-	tunnelMgr *wireguard.TunnelManager
+	store         database.Store
+	tunnelMgr     *wireguard.TunnelManager
+	statsInterval time.Duration
 }
 
-func NewTunnelHandler(store database.Store, tunnelMgr *wireguard.TunnelManager) *TunnelHandler {
-	return &TunnelHandler{store: store, tunnelMgr: tunnelMgr}
+func NewTunnelHandler(store database.Store, tunnelMgr *wireguard.TunnelManager, statsInterval time.Duration) *TunnelHandler {
+	return &TunnelHandler{store: store, tunnelMgr: tunnelMgr, statsInterval: statsInterval}
 }
 
 // HandleList godoc
@@ -577,4 +579,62 @@ func (h *TunnelHandler) HandleRemoteConfig(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Type", "text/plain")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s-remote.conf", tunnel.Name))
 	w.Write([]byte(conf))
+}
+
+// HandleStatsStream godoc
+// @Summary Stream tunnel stats
+// @Description Streams tunnel transfer statistics via Server-Sent Events.
+// @Tags tunnels
+// @Produce text/event-stream
+// @Security BearerAuth
+// @Success 200 {string} string "SSE stream of tunnel stats"
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 500 {object} Response{error=APIError}
+// @Router /api/v1/tunnels/stats/stream [get]
+func (h *TunnelHandler) HandleStatsStream(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "streaming not supported")
+		return
+	}
+
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+		slog.Error("failed to clear write deadline for tunnel SSE", "error", err)
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	ticker := time.NewTicker(h.statsInterval)
+	defer ticker.Stop()
+
+	// Send initial stats immediately
+	h.sendTunnelStats(w, flusher)
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			h.sendTunnelStats(w, flusher)
+		}
+	}
+}
+
+func (h *TunnelHandler) sendTunnelStats(w http.ResponseWriter, flusher http.Flusher) {
+	statusMap := h.tunnelMgr.GetAllTunnelStatuses()
+	statuses := make([]*domain.TunnelStatus, 0, len(statusMap))
+	for _, s := range statusMap {
+		statuses = append(statuses, s)
+	}
+	data, err := json.Marshal(statuses)
+	if err != nil {
+		slog.Error("marshal tunnel stats for sse", "error", err)
+		return
+	}
+	fmt.Fprintf(w, "data: %s\n\n", data)
+	flusher.Flush()
 }

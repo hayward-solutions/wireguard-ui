@@ -8,6 +8,7 @@
 	import { sidebarOpen, closeSidebar, toggleSidebar } from '$lib/stores/sidebar';
 	import { onMount } from 'svelte';
 	import { startStatsStream, stopStatsStream } from '$lib/stores/stats';
+	import { startTunnelStatsStream, stopTunnelStatsStream } from '$lib/stores/tunnel-stats';
 	import { Menu } from 'lucide-svelte';
 
 	let { children } = $props();
@@ -20,15 +21,22 @@
 	onMount(() => {
 		initTheme();
 		checkAuth();
-		return () => stopStatsStream();
+		return () => {
+			stopStatsStream();
+			stopTunnelStatsStream();
+		};
 	});
 
 	// Start/stop stats stream based on auth state
 	$effect(() => {
 		if ($user) {
 			startStatsStream();
+			if ($user.role === 'admin') {
+				startTunnelStatsStream();
+			}
 		} else {
 			stopStatsStream();
+			stopTunnelStatsStream();
 		}
 	});
 

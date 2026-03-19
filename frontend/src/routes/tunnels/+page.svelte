@@ -314,7 +314,7 @@
 								{/if}
 							</td>
 							<td class="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100">
-								{t.name}
+								<a href="/tunnels/{t.id}" class="hover:underline">{t.name}</a>
 								{#if t.description}
 									<span class="block text-xs text-zinc-400 dark:text-zinc-500">{t.description}</span>
 								{/if}
