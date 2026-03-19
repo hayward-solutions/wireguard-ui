@@ -70,12 +70,14 @@ func NewOIDCProvider(ctx context.Context, cfg OIDCConfig) (*OIDCProvider, error)
 }
 
 // AuthCodeURL returns the URL to redirect the user to for authentication.
-func (p *OIDCProvider) AuthCodeURL(state string) string {
-	return p.oauth2Config.AuthCodeURL(state)
+// The nonce is included as an OIDC parameter and must be validated after exchange.
+func (p *OIDCProvider) AuthCodeURL(state, nonce string) string {
+	return p.oauth2Config.AuthCodeURL(state, oauth2.SetAuthURLParam("nonce", nonce))
 }
 
 // Exchange exchanges an authorization code for tokens and returns the user info.
-func (p *OIDCProvider) Exchange(ctx context.Context, code string) (*OIDCUser, error) {
+// The expectedNonce must match the nonce embedded in the ID token to prevent replay attacks.
+func (p *OIDCProvider) Exchange(ctx context.Context, code, expectedNonce string) (*OIDCUser, error) {
 	token, err := p.oauth2Config.Exchange(ctx, code)
 	if err != nil {
 		return nil, fmt.Errorf("exchange code: %w", err)
@@ -89,6 +91,11 @@ func (p *OIDCProvider) Exchange(ctx context.Context, code string) (*OIDCUser, er
 	idToken, err := p.verifier.Verify(ctx, rawIDToken)
 	if err != nil {
 		return nil, fmt.Errorf("verify id_token: %w", err)
+	}
+
+	// Validate nonce to prevent ID token replay attacks.
+	if expectedNonce == "" || idToken.Nonce != expectedNonce {
+		return nil, fmt.Errorf("invalid nonce in id_token")
 	}
 
 	var rawClaims map[string]interface{}

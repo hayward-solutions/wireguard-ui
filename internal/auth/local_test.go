@@ -2,8 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,6 +10,8 @@ import (
 	"github.com/hayward-solutions/wireguard-ui/internal/database"
 	"github.com/hayward-solutions/wireguard-ui/internal/domain"
 )
+
+var testHMACKey = []byte("test-hmac-key-for-tokens")
 
 // mockAPIKeyStore implements database.Store with stubs for all methods.
 // Only the fields/methods relevant to APIKeyMiddleware return real data.
@@ -54,8 +54,7 @@ func newCaptureHandler() *captureHandler {
 
 func hashToken(t *testing.T, raw string) string {
 	t.Helper()
-	h := sha256.Sum256([]byte(raw))
-	return hex.EncodeToString(h[:])
+	return HashAPIToken(testHMACKey, raw)
 }
 
 func TestAPIKeyMiddleware_StaticKey(t *testing.T) {
@@ -63,7 +62,7 @@ func TestAPIKeyMiddleware_StaticKey(t *testing.T) {
 	store := &mockAPIKeyStore{}
 	handler := newCaptureHandler()
 
-	mw := APIKeyMiddleware(staticKey, store)(handler)
+	mw := APIKeyMiddleware(staticKey, store, testHMACKey)(handler)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 	req.Header.Set("X-API-Key", staticKey)
@@ -107,7 +106,7 @@ func TestAPIKeyMiddleware_BearerWguiToken(t *testing.T) {
 	}
 	handler := newCaptureHandler()
 
-	mw := APIKeyMiddleware("unused-static-key", store)(handler)
+	mw := APIKeyMiddleware("unused-static-key", store, testHMACKey)(handler)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 	req.Header.Set("Authorization", "Bearer "+rawToken)
@@ -153,7 +152,7 @@ func TestAPIKeyMiddleware_ExpiredToken(t *testing.T) {
 	}
 	handler := newCaptureHandler()
 
-	mw := APIKeyMiddleware("some-static-key", store)(handler)
+	mw := APIKeyMiddleware("some-static-key", store, testHMACKey)(handler)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 	req.Header.Set("Authorization", "Bearer "+rawToken)
@@ -180,7 +179,7 @@ func TestAPIKeyMiddleware_UnknownToken(t *testing.T) {
 	}
 	handler := newCaptureHandler()
 
-	mw := APIKeyMiddleware("some-static-key", store)(handler)
+	mw := APIKeyMiddleware("some-static-key", store, testHMACKey)(handler)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 	req.Header.Set("Authorization", "Bearer "+rawToken)
@@ -203,7 +202,7 @@ func TestAPIKeyMiddleware_NoKey(t *testing.T) {
 	store := &mockAPIKeyStore{}
 	handler := newCaptureHandler()
 
-	mw := APIKeyMiddleware("some-static-key", store)(handler)
+	mw := APIKeyMiddleware("some-static-key", store, testHMACKey)(handler)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 	// No X-API-Key header, no Authorization header.
@@ -230,7 +229,7 @@ func TestAPIKeyMiddleware_StaticKeyViaBearer(t *testing.T) {
 	store := &mockAPIKeyStore{}
 	handler := newCaptureHandler()
 
-	mw := APIKeyMiddleware(staticKey, store)(handler)
+	mw := APIKeyMiddleware(staticKey, store, testHMACKey)(handler)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 	req.Header.Set("Authorization", "Bearer "+staticKey)

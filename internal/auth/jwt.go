@@ -15,14 +15,18 @@ type Claims struct {
 }
 
 type JWTManager struct {
-	secret []byte
-	expiry time.Duration
+	secret   []byte
+	expiry   time.Duration
+	issuer   string
+	audience string
 }
 
-func NewJWTManager(secret string, expiry time.Duration) *JWTManager {
+func NewJWTManager(secret string, expiry time.Duration, issuer, audience string) *JWTManager {
 	return &JWTManager{
-		secret: []byte(secret),
-		expiry: expiry,
+		secret:   []byte(secret),
+		expiry:   expiry,
+		issuer:   issuer,
+		audience: audience,
 	}
 }
 
@@ -30,6 +34,8 @@ func (m *JWTManager) Issue(subject, email, name, role string) (string, error) {
 	now := time.Now()
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    m.issuer,
+			Audience:  jwt.ClaimStrings{m.audience},
 			Subject:   subject,
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(m.expiry)),
@@ -58,7 +64,7 @@ func (m *JWTManager) Validate(tokenStr string) (*Claims, error) {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 		}
 		return m.secret, nil
-	})
+	}, jwt.WithIssuer(m.issuer), jwt.WithAudience(m.audience))
 	if err != nil {
 		return nil, fmt.Errorf("parse token: %w", err)
 	}

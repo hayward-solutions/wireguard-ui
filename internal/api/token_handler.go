@@ -2,9 +2,9 @@ package api
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -18,10 +18,11 @@ import (
 type TokenHandler struct {
 	store       database.Store
 	maxLifetime time.Duration
+	hmacKey     []byte
 }
 
-func NewTokenHandler(store database.Store, maxLifetime time.Duration) *TokenHandler {
-	return &TokenHandler{store: store, maxLifetime: maxLifetime}
+func NewTokenHandler(store database.Store, maxLifetime time.Duration, hmacKey []byte) *TokenHandler {
+	return &TokenHandler{store: store, maxLifetime: maxLifetime, hmacKey: hmacKey}
 }
 
 // HandleList godoc
@@ -126,9 +127,8 @@ func (h *TokenHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	rawToken := "wgui_" + hex.EncodeToString(rawBytes)
 
-	// Hash for storage
-	hash := sha256.Sum256([]byte(rawToken))
-	tokenHash := hex.EncodeToString(hash[:])
+	// Hash for storage using keyed HMAC
+	tokenHash := auth.HashAPIToken(h.hmacKey, rawToken)
 
 	// Prefix for display (first 8 hex chars after wgui_)
 	tokenPrefix := rawToken[:13] // "wgui_" + 8 hex chars
@@ -147,6 +147,9 @@ func (h *TokenHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to create token")
 		return
 	}
+
+	slog.Warn("audit", "action", "api_token_created",
+		"actor", claims.Subject, "target_id", token.ID, "token_name", req.Name)
 
 	// Return the raw token once
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
@@ -203,6 +206,9 @@ func (h *TokenHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to delete token")
 		return
 	}
+
+	slog.Warn("audit", "action", "api_token_deleted",
+		"actor", claims.Subject, "target_id", id)
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "token deleted"})
 }
