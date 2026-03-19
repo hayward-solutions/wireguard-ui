@@ -257,9 +257,11 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 	})
 
 	// Swagger UI and OpenAPI spec (unauthenticated)
-	r.Get("/api/docs/*", httpSwagger.Handler(
+	docsHandler := httpSwagger.Handler(
 		httpSwagger.URL("/api/docs/doc.json"),
-	))
+	)
+	r.Get("/api/docs", http.RedirectHandler("/api/docs/index.html", http.StatusMovedPermanently).ServeHTTP)
+	r.Get("/api/docs/*", docsHandler)
 
 	// Serve frontend SPA
 	if cfg.FrontendFS != nil {

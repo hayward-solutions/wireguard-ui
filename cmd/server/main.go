@@ -21,7 +21,7 @@
 
 package main
 
-//go:generate swag init -g cmd/server/main.go -o docs/ --parseInternal --parseDependency --quiet -d ../../
+//go:generate swag init -g cmd/server/main.go -o docs/ --parseInternal --parseDependency -d ../../
 
 import (
 	"context"
