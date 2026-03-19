@@ -6,7 +6,7 @@
 	import { goto } from '$app/navigation';
 	import { startAuthentication } from '@simplewebauthn/browser';
 
-	let authInfo = $state<{ oidc_enabled: boolean; local_enabled: boolean; webauthn_enabled: boolean } | null>(null);
+	let authInfo = $state<{ oidc_enabled: boolean; local_enabled: boolean; webauthn_enabled: boolean; passwordless_login_enabled: boolean } | null>(null);
 	let username = $state('');
 	let password = $state('');
 	let error = $state('');
@@ -53,7 +53,7 @@
 				mfaMethods = json.data.mfa_methods || [];
 			} else {
 				await checkAuth();
-				goto('/');
+				goto(json.data?.mfa_setup_required ? '/profile' : '/');
 			}
 		} catch (err) {
 			error = 'Login failed';
@@ -330,7 +330,7 @@
 					</a>
 				{/if}
 
-				{#if authInfo.webauthn_enabled}
+				{#if authInfo.passwordless_login_enabled}
 					<div class="my-6 flex items-center gap-3">
 						<div class="flex-1 border-t border-zinc-200 dark:border-zinc-700"></div>
 						<span class="text-xs text-zinc-400 dark:text-zinc-500">or</span>

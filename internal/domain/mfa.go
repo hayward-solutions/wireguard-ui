@@ -11,6 +11,8 @@ type WebAuthnCredential struct {
 	AttestationType string     `json:"attestation_type"`
 	AAGUID          string     `json:"aaguid"`
 	SignCount       uint32     `json:"sign_count"`
+	BackupEligible  bool       `json:"backup_eligible"`
+	BackupState     bool       `json:"backup_state"`
 	Transports      []string   `json:"transports"`
 	Name            string     `json:"name"`
 	CreatedAt       time.Time  `json:"created_at"`

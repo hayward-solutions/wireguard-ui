@@ -374,8 +374,10 @@ func run() error {
 		OIDCAdminGroup:      cfg.OIDCAdminGroup,
 		RequireHTTPS:        cfg.RequireHTTPS,
 		AllowCustomScripts:  cfg.AllowCustomScripts,
-		CORSOrigins:         cfg.CORSOrigins,
-		TrustedProxies:      cfg.TrustedProxies,
+		CORSOrigins:            cfg.CORSOrigins,
+		TrustedProxies:         cfg.TrustedProxies,
+		AllowPasswordlessLogin: cfg.AllowPasswordlessLogin,
+		MFARequired:            cfg.MFARequired,
 	})
 
 	// Start HTTP server

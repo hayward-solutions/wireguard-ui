@@ -1095,7 +1095,7 @@ func (s *SQLiteStore) DeleteTunnel(ctx context.Context, id string) error {
 func (s *SQLiteStore) ListWebAuthnCredentials(ctx context.Context, userID string) ([]domain.WebAuthnCredential, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, user_id, credential_id, public_key, attestation_type, aaguid,
-		       sign_count, transports, name, created_at, last_used_at
+		       sign_count, backup_eligible, backup_state, transports, name, created_at, last_used_at
 		FROM user_webauthn_credentials WHERE user_id = ? ORDER BY created_at`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list webauthn credentials: %w", err)
@@ -1107,7 +1107,7 @@ func (s *SQLiteStore) ListWebAuthnCredentials(ctx context.Context, userID string
 		var c domain.WebAuthnCredential
 		var transportsJSON string
 		if err := rows.Scan(&c.ID, &c.UserID, &c.CredentialID, &c.PublicKey, &c.AttestationType,
-			&c.AAGUID, &c.SignCount, &transportsJSON, &c.Name, &c.CreatedAt, &c.LastUsedAt); err != nil {
+			&c.AAGUID, &c.SignCount, &c.BackupEligible, &c.BackupState, &transportsJSON, &c.Name, &c.CreatedAt, &c.LastUsedAt); err != nil {
 			return nil, fmt.Errorf("scan webauthn credential: %w", err)
 		}
 		_ = json.Unmarshal([]byte(transportsJSON), &c.Transports)
@@ -1119,13 +1119,13 @@ func (s *SQLiteStore) ListWebAuthnCredentials(ctx context.Context, userID string
 func (s *SQLiteStore) GetWebAuthnCredentialByCredentialID(ctx context.Context, credentialID string) (*domain.WebAuthnCredential, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, user_id, credential_id, public_key, attestation_type, aaguid,
-		       sign_count, transports, name, created_at, last_used_at
+		       sign_count, backup_eligible, backup_state, transports, name, created_at, last_used_at
 		FROM user_webauthn_credentials WHERE credential_id = ?`, credentialID)
 
 	var c domain.WebAuthnCredential
 	var transportsJSON string
 	err := row.Scan(&c.ID, &c.UserID, &c.CredentialID, &c.PublicKey, &c.AttestationType,
-		&c.AAGUID, &c.SignCount, &transportsJSON, &c.Name, &c.CreatedAt, &c.LastUsedAt)
+		&c.AAGUID, &c.SignCount, &c.BackupEligible, &c.BackupState, &transportsJSON, &c.Name, &c.CreatedAt, &c.LastUsedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -1139,10 +1139,10 @@ func (s *SQLiteStore) GetWebAuthnCredentialByCredentialID(ctx context.Context, c
 func (s *SQLiteStore) CreateWebAuthnCredential(ctx context.Context, cred *domain.WebAuthnCredential) error {
 	transportsJSON, _ := json.Marshal(cred.Transports)
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO user_webauthn_credentials (id, user_id, credential_id, public_key, attestation_type, aaguid, sign_count, transports, name, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO user_webauthn_credentials (id, user_id, credential_id, public_key, attestation_type, aaguid, sign_count, backup_eligible, backup_state, transports, name, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		cred.ID, cred.UserID, cred.CredentialID, cred.PublicKey, cred.AttestationType,
-		cred.AAGUID, cred.SignCount, string(transportsJSON), cred.Name, cred.CreatedAt)
+		cred.AAGUID, cred.SignCount, cred.BackupEligible, cred.BackupState, string(transportsJSON), cred.Name, cred.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("create webauthn credential: %w", err)
 	}

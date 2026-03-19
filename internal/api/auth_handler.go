@@ -18,40 +18,46 @@ import (
 )
 
 type AuthHandler struct {
-	oidc            *auth.OIDCProvider
-	jwt             *auth.JWTManager
-	store           database.Store
-	loginLimiter    *auth.RateLimiter
-	oidcAdminGroup  string
-	secureCookie    bool
-	sessionExpiry   time.Duration
-	policyEngine    *acl.PolicyEngine
-	webauthnEnabled bool
+	oidc                   *auth.OIDCProvider
+	jwt                    *auth.JWTManager
+	store                  database.Store
+	loginLimiter           *auth.RateLimiter
+	oidcAdminGroup         string
+	secureCookie           bool
+	sessionExpiry          time.Duration
+	policyEngine           *acl.PolicyEngine
+	webauthnEnabled        bool
+	allowPasswordlessLogin bool
+	mfaRequired            bool
 }
 
 type AuthHandlerConfig struct {
-	OIDC            *auth.OIDCProvider
-	JWT             *auth.JWTManager
-	Store           database.Store
-	LoginLimiter    *auth.RateLimiter
-	OIDCAdminGroup  string
-	SecureCookie    bool
-	SessionExpiry   time.Duration
-	PolicyEngine    *acl.PolicyEngine
-	WebAuthnEnabled bool
+	OIDC                   *auth.OIDCProvider
+	JWT                    *auth.JWTManager
+	Store                  database.Store
+	LoginLimiter           *auth.RateLimiter
+	OIDCAdminGroup         string
+	SecureCookie           bool
+	SessionExpiry          time.Duration
+	PolicyEngine           *acl.PolicyEngine
+	WebAuthnEnabled        bool
+	AllowPasswordlessLogin bool
+	MFARequired            bool
 }
 
 func NewAuthHandler(cfg AuthHandlerConfig) *AuthHandler {
 	return &AuthHandler{
-		oidc:            cfg.OIDC,
-		jwt:             cfg.JWT,
-		store:           cfg.Store,
-		loginLimiter:    cfg.LoginLimiter,
-		oidcAdminGroup:  cfg.OIDCAdminGroup,
-		secureCookie:    cfg.SecureCookie,
-		sessionExpiry:   cfg.SessionExpiry,
-		policyEngine:    cfg.PolicyEngine,
-		webauthnEnabled: cfg.WebAuthnEnabled,
+		oidc:                   cfg.OIDC,
+		jwt:                    cfg.JWT,
+		store:                  cfg.Store,
+		loginLimiter:           cfg.LoginLimiter,
+		oidcAdminGroup:         cfg.OIDCAdminGroup,
+		secureCookie:           cfg.SecureCookie,
+		sessionExpiry:          cfg.SessionExpiry,
+		policyEngine:           cfg.PolicyEngine,
+		webauthnEnabled:        cfg.WebAuthnEnabled,
+		allowPasswordlessLogin: cfg.AllowPasswordlessLogin,
+		mfaRequired:            cfg.MFARequired,
 	}
 }
 
@@ -163,26 +169,41 @@ func (h *AuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If MFA is globally required but user hasn't enrolled yet, let them in
+	// but signal the frontend to force MFA setup.
+	mfaSetupRequired := false
+	if h.mfaRequired && !user.MFAEnabled {
+		methods := getMFAMethods(r, h.store, user.ID)
+		if len(methods) == 0 {
+			mfaSetupRequired = true
+		}
+	}
+
 	h.issueSessionAndToken(w, r, user)
 
 	slog.Warn("audit", "action", "login_success", "actor", user.ID, "target_name", user.Username, "method", "local")
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"user": map[string]string{
 			"id":       user.ID,
 			"username": user.Username,
 			"name":     user.Name,
 			"role":     user.Role,
 		},
-	})
+	}
+	if mfaSetupRequired {
+		resp["mfa_setup_required"] = true
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // HandleAuthInfo returns what auth methods are available.
 func (h *AuthHandler) HandleAuthInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"oidc_enabled":     h.oidc != nil,
-		"local_enabled":    true,
-		"webauthn_enabled": h.webauthnEnabled,
+		"oidc_enabled":              h.oidc != nil,
+		"local_enabled":             true,
+		"webauthn_enabled":          h.webauthnEnabled,
+		"passwordless_login_enabled": h.webauthnEnabled && h.allowPasswordlessLogin,
 	})
 }
 
@@ -324,12 +345,19 @@ func (h *AuthHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "not authenticated")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"id":    claims.Subject,
 		"email": claims.Email,
 		"name":  claims.Name,
 		"role":  claims.Role,
-	})
+	}
+	if h.mfaRequired {
+		methods := getMFAMethods(r, h.store, claims.Subject)
+		if len(methods) == 0 {
+			resp["mfa_setup_required"] = true
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *AuthHandler) syncOIDCGroups(ctx context.Context, userID string, oidcGroups []string) {

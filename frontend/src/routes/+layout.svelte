@@ -32,10 +32,19 @@
 		}
 	});
 
+	const isProfilePage = $derived(page.url.pathname === '/profile');
+
 	// Redirect to login if not authenticated and not already on login page
 	$effect(() => {
 		if (!$loading && !$user && !isLoginPage) {
 			goto('/login');
+		}
+	});
+
+	// Enforce MFA setup: redirect to profile if MFA enrollment is required
+	$effect(() => {
+		if (!$loading && $user?.mfa_setup_required && !isProfilePage && !isLoginPage) {
+			goto('/profile');
 		}
 	});
 
