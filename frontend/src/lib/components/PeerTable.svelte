@@ -58,7 +58,7 @@
 						></div>
 					</td>
 					<td class="px-4 py-3">
-						<span class="font-medium text-zinc-900 dark:text-zinc-100">{peer.name}</span>
+						<a href="/peers/{peer.id}" class="font-medium text-zinc-900 hover:underline dark:text-zinc-100">{peer.name}</a>
 					</td>
 					{#if $user?.role === 'admin'}
 						<td class="px-4 py-3 text-zinc-500 dark:text-zinc-400">{peer.created_by_name ?? '—'}</td>
