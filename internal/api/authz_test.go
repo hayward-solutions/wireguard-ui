@@ -233,8 +233,13 @@ func (m *mockWG) Close() error { return nil }
 
 // --- Test helpers ---
 
+const testIssuer = "http://test.local"
+const testAudience = "http://test.local"
+
+var testHMACKey = []byte(testJWTSecret)
+
 func buildTestRouter(store *mockStore) http.Handler {
-	jwtMgr := auth.NewJWTManager(testJWTSecret, 15*time.Minute)
+	jwtMgr := auth.NewJWTManager(testJWTSecret, 15*time.Minute, testIssuer, testAudience)
 	wg := &mockWG{}
 	mon := monitor.New(wg, 5*time.Second)
 
@@ -244,12 +249,13 @@ func buildTestRouter(store *mockStore) http.Handler {
 		JWTManager: jwtMgr,
 		Monitor:    mon,
 		FrontendFS: nil,
+		HMACKey:    testHMACKey,
 	})
 }
 
 func issueToken(t *testing.T, role string) string {
 	t.Helper()
-	jwtMgr := auth.NewJWTManager(testJWTSecret, 15*time.Minute)
+	jwtMgr := auth.NewJWTManager(testJWTSecret, 15*time.Minute, testIssuer, testAudience)
 	token, err := jwtMgr.Issue(testUserID, "test@example.com", "Test User", role)
 	if err != nil {
 		t.Fatalf("issue token: %v", err)

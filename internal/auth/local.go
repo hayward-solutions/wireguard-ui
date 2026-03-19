@@ -2,9 +2,7 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -16,13 +14,14 @@ import (
 // APIKeyMiddleware validates requests with an X-API-Key header or Bearer tokens
 // that start with "wgui_". It checks the static admin API key first, then
 // looks up per-user API tokens in the database.
-func APIKeyMiddleware(apiKey string, store database.Store) func(http.Handler) http.Handler {
+// The hmacKey is used for keyed HMAC-SHA256 hashing of API tokens.
+func APIKeyMiddleware(apiKey string, store database.Store, hmacKey []byte) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Try X-API-Key header
 			key := r.Header.Get("X-API-Key")
 			if key != "" {
-				if tryAPIToken(r, next, w, key, apiKey, store) {
+				if tryAPIToken(r, next, w, key, apiKey, store, hmacKey) {
 					return
 				}
 			}
@@ -31,7 +30,7 @@ func APIKeyMiddleware(apiKey string, store database.Store) func(http.Handler) ht
 			if authHeader := r.Header.Get("Authorization"); authHeader != "" {
 				if strings.HasPrefix(authHeader, "Bearer wgui_") {
 					bearer := strings.TrimPrefix(authHeader, "Bearer ")
-					if tryAPIToken(r, next, w, bearer, apiKey, store) {
+					if tryAPIToken(r, next, w, bearer, apiKey, store, hmacKey) {
 						return
 					}
 				}
@@ -45,7 +44,7 @@ func APIKeyMiddleware(apiKey string, store database.Store) func(http.Handler) ht
 
 // tryAPIToken attempts to authenticate with the given token.
 // Returns true if authentication was handled (request served), false to continue.
-func tryAPIToken(r *http.Request, next http.Handler, w http.ResponseWriter, token, staticKey string, store database.Store) bool {
+func tryAPIToken(r *http.Request, next http.Handler, w http.ResponseWriter, token, staticKey string, store database.Store, hmacKey []byte) bool {
 	// Check static admin API key (deprecated — prefer per-user tokens)
 	if staticKey != "" && subtle.ConstantTimeCompare([]byte(token), []byte(staticKey)) == 1 {
 		slog.Warn("static ADMIN_API_KEY used for authentication; this is deprecated — create per-user API tokens instead",
@@ -66,8 +65,7 @@ func tryAPIToken(r *http.Request, next http.Handler, w http.ResponseWriter, toke
 
 	// Check per-user API tokens
 	if store != nil && strings.HasPrefix(token, "wgui_") {
-		hash := sha256.Sum256([]byte(token))
-		tokenHash := hex.EncodeToString(hash[:])
+		tokenHash := HashAPIToken(hmacKey, token)
 
 		apiToken, err := store.GetAPITokenByHash(r.Context(), tokenHash)
 		if err != nil {
@@ -96,6 +94,11 @@ func tryAPIToken(r *http.Request, next http.Handler, w http.ResponseWriter, toke
 			Role:  user.Role,
 		}
 		claims.Subject = user.ID
+
+		slog.Warn("audit", "action", "api_token_used",
+			"actor", user.ID, "target_id", apiToken.ID,
+			"token_name", apiToken.Name,
+			"remote_addr", r.RemoteAddr, "path", r.URL.Path)
 
 		// Update last_used in background
 		go func() {

@@ -78,6 +78,12 @@ func (h *AuthHandler) HandleLoginPage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		nonce, err := generateState() // same random generation as state
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to generate nonce")
+			return
+		}
+
 		http.SetCookie(w, &http.Cookie{
 			Name:     "oauth_state",
 			Value:    state,
@@ -88,7 +94,17 @@ func (h *AuthHandler) HandleLoginPage(w http.ResponseWriter, r *http.Request) {
 			SameSite: http.SameSiteLaxMode,
 		})
 
-		http.Redirect(w, r, h.oidc.AuthCodeURL(state), http.StatusFound)
+		http.SetCookie(w, &http.Cookie{
+			Name:     "oauth_nonce",
+			Value:    nonce,
+			Path:     "/",
+			MaxAge:   300,
+			HttpOnly: true,
+			Secure:   h.secureCookie,
+			SameSite: http.SameSiteLaxMode,
+		})
+
+		http.Redirect(w, r, h.oidc.AuthCodeURL(state, nonce), http.StatusFound)
 		return
 	}
 
@@ -260,13 +276,29 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		Secure:   h.secureCookie,
 	})
 
+	// Read and clear nonce cookie
+	nonceCookie, err := r.Cookie("oauth_nonce")
+	if err != nil || nonceCookie.Value == "" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "missing nonce cookie")
+		return
+	}
+	nonce := nonceCookie.Value
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oauth_nonce",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   h.secureCookie,
+	})
+
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "missing code parameter")
 		return
 	}
 
-	oidcUser, err := h.oidc.Exchange(r.Context(), code)
+	oidcUser, err := h.oidc.Exchange(r.Context(), code, nonce)
 	if err != nil {
 		slog.Error("oidc exchange failed", "error", err)
 		slog.Warn("audit", "action", "login_failure", "method", "oidc", "reason", "exchange_failed")

@@ -344,7 +344,7 @@ func run() error {
 	}()
 
 	// Initialize JWT manager
-	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiry)
+	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiry, cfg.BaseURL, cfg.BaseURL)
 
 	// Initialize WebAuthn provider
 	webauthnProvider, err := auth.NewWebAuthnProvider(cfg.BaseURL)
@@ -405,6 +405,7 @@ func run() error {
 		TrustedProxies:         cfg.TrustedProxies,
 		AllowPasswordlessLogin: cfg.AllowPasswordlessLogin,
 		MFARequired:            cfg.MFARequired,
+		HMACKey:                []byte(cfg.JWTSecret),
 	})
 
 	// Start HTTP server

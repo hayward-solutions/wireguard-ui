@@ -39,6 +39,7 @@ type RouterConfig struct {
 	DevMode            bool
 	AdminAPIKey         string
 	APITokenMaxLifetime time.Duration
+	HMACKey             []byte
 	OIDCAdminGroup     string
 	RequireHTTPS       bool
 	AllowCustomScripts bool
@@ -133,7 +134,7 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 	// Authenticated API routes
 	r.Group(func(r chi.Router) {
 		// API key middleware runs first — sets claims if valid key provided
-		r.Use(auth.APIKeyMiddleware(cfg.AdminAPIKey, cfg.Store))
+		r.Use(auth.APIKeyMiddleware(cfg.AdminAPIKey, cfg.Store, cfg.HMACKey))
 		r.Use(auth.Middleware(cfg.JWTManager))
 		r.Use(CSRFMiddleware)
 
@@ -173,7 +174,7 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 			r.Post("/api/v1/me/password", userHandler.HandleChangePassword)
 		}
 
-		tokenHandler := NewTokenHandler(cfg.Store, cfg.APITokenMaxLifetime)
+		tokenHandler := NewTokenHandler(cfg.Store, cfg.APITokenMaxLifetime, cfg.HMACKey)
 		r.Get("/api/v1/me/tokens", tokenHandler.HandleList)
 		r.Post("/api/v1/me/tokens", tokenHandler.HandleCreate)
 		r.Delete("/api/v1/me/tokens/{id}", tokenHandler.HandleDelete)
