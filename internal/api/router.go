@@ -216,11 +216,12 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		})
 
 		// Tunnels (admin only)
-		tunnelHandler := NewTunnelHandler(cfg.Store, cfg.TunnelManager)
+		tunnelHandler := NewTunnelHandler(cfg.Store, cfg.TunnelManager, cfg.Monitor.Interval())
 		r.Route("/api/v1/tunnels", func(r chi.Router) {
 			r.Use(RequireAdmin)
 			r.Get("/", tunnelHandler.HandleList)
 			r.Post("/", tunnelHandler.HandleCreate)
+			r.Get("/stats/stream", tunnelHandler.HandleStatsStream)
 			r.Get("/{id}", tunnelHandler.HandleGet)
 			r.Put("/{id}", tunnelHandler.HandleUpdate)
 			r.Delete("/{id}", tunnelHandler.HandleDelete)
