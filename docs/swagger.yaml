@@ -1,0 +1,3014 @@
+basePath: /
+definitions:
+  github_com_hayward-solutions_wireguard-ui_internal_domain.ACLRule:
+    properties:
+      action:
+        description: '"allow" (default-deny model)'
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      dst_cidr:
+        description: single CIDR, e.g. "10.0.0.0/24"
+        type: string
+      dst_ports:
+        description: '"" (all), "80", "443", "8000-8999"'
+        type: string
+      enabled:
+        type: boolean
+      group_id:
+        description: mutually exclusive with UserID
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      priority:
+        description: lower = evaluated first
+        type: integer
+      protocol:
+        description: '"any", "tcp", "udp"'
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        description: mutually exclusive with GroupID
+        type: string
+    type: object
+  github_com_hayward-solutions_wireguard-ui_internal_domain.FirewallConfig:
+    properties:
+      allow_peer_to_peer:
+        description: when false (default), drops wg→wg traffic to isolate peers
+        type: boolean
+      enable_forwarding:
+        type: boolean
+      enable_nat:
+        type: boolean
+      nat_out_interface:
+        description: outbound interface glob; defaults to "eth+"
+        type: string
+      nat_source:
+        description: CIDR for POSTROUTING; defaults to server Address
+        type: string
+    type: object
+  github_com_hayward-solutions_wireguard-ui_internal_domain.Group:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      source:
+        description: '"local" or "oidc"'
+        type: string
+    type: object
+  github_com_hayward-solutions_wireguard-ui_internal_domain.Peer:
+    properties:
+      address:
+        type: string
+      allowed_ips:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      created_by_name:
+        type: string
+      dns:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      name:
+        type: string
+      persistent_keepalive:
+        type: integer
+      public_key:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_hayward-solutions_wireguard-ui_internal_domain.PeerStats:
+    properties:
+      connected:
+        type: boolean
+      endpoint:
+        type: string
+      last_handshake:
+        type: string
+      public_key:
+        type: string
+      transfer_rx:
+        type: integer
+      transfer_tx:
+        type: integer
+    type: object
+  github_com_hayward-solutions_wireguard-ui_internal_domain.ServerConfig:
+    properties:
+      address:
+        type: string
+      created_at:
+        type: string
+      default_allowed_ips:
+        type: string
+      default_dns:
+        type: string
+      dns:
+        type: string
+      endpoint:
+        type: string
+      firewall_config:
+        $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.FirewallConfig'
+      id:
+        type: string
+      listen_port:
+        type: integer
+      mtu:
+        type: integer
+      post_down:
+        type: string
+      post_up:
+        type: string
+      public_key:
+        type: string
+      tunnel_subnet:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_hayward-solutions_wireguard-ui_internal_domain.Tunnel:
+    properties:
+      address:
+        description: VPN address for this end, e.g. "10.100.0.1/30"
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      dns:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      listen_port:
+        description: 0 = ephemeral (outbound-only)
+        type: integer
+      mtu:
+        type: integer
+      name:
+        type: string
+      peer_allowed_ips:
+        description: remote subnets, e.g. "10.1.0.0/24, 10.2.0.0/24"
+        type: string
+      peer_endpoint:
+        description: e.g. "vpn-west.example.com:51820"
+        type: string
+      peer_public_key:
+        description: Remote peer config
+        type: string
+      persistent_keepalive:
+        type: integer
+      public_key:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_hayward-solutions_wireguard-ui_internal_domain.TunnelStatus:
+    properties:
+      connected:
+        type: boolean
+      endpoint:
+        type: string
+      last_handshake:
+        type: string
+      transfer_rx:
+        type: integer
+      transfer_tx:
+        type: integer
+      tunnel_id:
+        type: string
+    type: object
+  github_com_hayward-solutions_wireguard-ui_internal_domain.User:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      last_login:
+        type: string
+      mfa_enabled:
+        type: boolean
+      name:
+        type: string
+      role:
+        type: string
+      username:
+        type: string
+    type: object
+  internal_api.APIError:
+    properties:
+      code:
+        type: string
+      message:
+        type: string
+    type: object
+  internal_api.AuthInfoResponse:
+    properties:
+      local_enabled:
+        type: boolean
+      oidc_enabled:
+        type: boolean
+      webauthn_enabled:
+        type: boolean
+    type: object
+  internal_api.ChangePasswordRequest:
+    properties:
+      current_password:
+        type: string
+      new_password:
+        type: string
+    type: object
+  internal_api.CreateACLRuleRequest:
+    properties:
+      description:
+        type: string
+      dst_cidr:
+        type: string
+      dst_ports:
+        type: string
+      enabled:
+        type: boolean
+      group_id:
+        type: string
+      name:
+        type: string
+      priority:
+        type: integer
+      protocol:
+        type: string
+      user_id:
+        type: string
+    type: object
+  internal_api.CreateGroupRequest:
+    properties:
+      name:
+        type: string
+    type: object
+  internal_api.CreatePeerRequest:
+    properties:
+      allowed_ips:
+        type: string
+      dns:
+        type: string
+      name:
+        type: string
+      persistent_keepalive:
+        type: integer
+      public_key:
+        type: string
+    type: object
+  internal_api.CreatePeerResponse:
+    properties:
+      address:
+        type: string
+      allowed_ips:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      created_by_name:
+        type: string
+      dns:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      name:
+        type: string
+      persistent_keepalive:
+        type: integer
+      preshared_key:
+        type: string
+      public_key:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  internal_api.CreateTokenRequest:
+    properties:
+      expires_in:
+        description: e.g. "720h" (30 days)
+        type: string
+      name:
+        type: string
+    type: object
+  internal_api.CreateTokenResponse:
+    properties:
+      created_at:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      token:
+        type: string
+      token_prefix:
+        type: string
+    type: object
+  internal_api.CreateTunnelRequest:
+    properties:
+      address:
+        type: string
+      description:
+        type: string
+      dns:
+        type: string
+      listen_port:
+        type: integer
+      mtu:
+        type: integer
+      name:
+        type: string
+      peer_allowed_ips:
+        type: string
+      peer_endpoint:
+        type: string
+      peer_public_key:
+        type: string
+      persistent_keepalive:
+        type: integer
+      preshared_key:
+        type: string
+      private_key:
+        type: string
+      public_key:
+        type: string
+    type: object
+  internal_api.CreateTunnelResponse:
+    properties:
+      address:
+        description: VPN address for this end, e.g. "10.100.0.1/30"
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      dns:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      listen_port:
+        description: 0 = ephemeral (outbound-only)
+        type: integer
+      mtu:
+        type: integer
+      name:
+        type: string
+      peer_allowed_ips:
+        description: remote subnets, e.g. "10.1.0.0/24, 10.2.0.0/24"
+        type: string
+      peer_endpoint:
+        description: e.g. "vpn-west.example.com:51820"
+        type: string
+      peer_public_key:
+        description: Remote peer config
+        type: string
+      persistent_keepalive:
+        type: integer
+      preshared_key:
+        type: string
+      public_key:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  internal_api.CreateUserRequest:
+    properties:
+      name:
+        type: string
+      password:
+        type: string
+      role:
+        type: string
+      username:
+        type: string
+    type: object
+  internal_api.LoginRequest:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    type: object
+  internal_api.LoginResponse:
+    properties:
+      user:
+        $ref: '#/definitions/internal_api.LoginUserInfo'
+    type: object
+  internal_api.LoginUserInfo:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      role:
+        type: string
+      username:
+        type: string
+    type: object
+  internal_api.MFAChallengeRequest:
+    properties:
+      code:
+        type: string
+      mfa_token:
+        type: string
+    type: object
+  internal_api.MFACredentialInfo:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      last_used_at:
+        type: string
+      name:
+        type: string
+    type: object
+  internal_api.MFARequiredResponse:
+    properties:
+      mfa_methods:
+        items:
+          type: string
+        type: array
+      mfa_required:
+        type: boolean
+      mfa_token:
+        type: string
+    type: object
+  internal_api.MFAStatusResponse:
+    properties:
+      mfa_enabled:
+        type: boolean
+      totp_enrolled:
+        type: boolean
+      webauthn_credentials:
+        items:
+          $ref: '#/definitions/internal_api.MFACredentialInfo'
+        type: array
+    type: object
+  internal_api.MFATokenRequest:
+    properties:
+      mfa_token:
+        type: string
+    type: object
+  internal_api.MessageResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  internal_api.PasskeyLoginBeginResponse:
+    properties:
+      challenge_id:
+        type: string
+      options: {}
+    type: object
+  internal_api.RegeneratePeerRequest:
+    properties:
+      public_key:
+        type: string
+    type: object
+  internal_api.ResetPasswordRequest:
+    properties:
+      password:
+        type: string
+    type: object
+  internal_api.Response:
+    properties:
+      data: {}
+      error:
+        $ref: '#/definitions/internal_api.APIError'
+    type: object
+  internal_api.ServerConfigResponse:
+    properties:
+      address:
+        type: string
+      created_at:
+        type: string
+      custom_scripts_allowed:
+        type: boolean
+      default_allowed_ips:
+        type: string
+      default_dns:
+        type: string
+      dns:
+        type: string
+      endpoint:
+        type: string
+      firewall_config:
+        $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.FirewallConfig'
+      id:
+        type: string
+      listen_port:
+        type: integer
+      mtu:
+        type: integer
+      post_down:
+        type: string
+      post_up:
+        type: string
+      public_key:
+        type: string
+      tunnel_subnet:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  internal_api.SetUserGroupsRequest:
+    properties:
+      group_ids:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_api.TOTPEnrollResponse:
+    properties:
+      qr_uri:
+        type: string
+      secret:
+        type: string
+    type: object
+  internal_api.TOTPVerifyRequest:
+    properties:
+      code:
+        type: string
+    type: object
+  internal_api.TokenWithStatus:
+    properties:
+      created_at:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      last_used:
+        type: string
+      name:
+        type: string
+      status:
+        type: string
+      token_prefix:
+        type: string
+      user_id:
+        type: string
+    type: object
+  internal_api.TunnelWithStatus:
+    properties:
+      address:
+        description: VPN address for this end, e.g. "10.100.0.1/30"
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      dns:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      listen_port:
+        description: 0 = ephemeral (outbound-only)
+        type: integer
+      mtu:
+        type: integer
+      name:
+        type: string
+      peer_allowed_ips:
+        description: remote subnets, e.g. "10.1.0.0/24, 10.2.0.0/24"
+        type: string
+      peer_endpoint:
+        description: e.g. "vpn-west.example.com:51820"
+        type: string
+      peer_public_key:
+        description: Remote peer config
+        type: string
+      persistent_keepalive:
+        type: integer
+      public_key:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.TunnelStatus'
+      updated_at:
+        type: string
+    type: object
+  internal_api.UpdateACLRuleRequest:
+    properties:
+      description:
+        type: string
+      dst_cidr:
+        type: string
+      dst_ports:
+        type: string
+      enabled:
+        type: boolean
+      group_id:
+        type: string
+      name:
+        type: string
+      priority:
+        type: integer
+      protocol:
+        type: string
+      user_id:
+        type: string
+    type: object
+  internal_api.UpdateGroupRequest:
+    properties:
+      name:
+        type: string
+    type: object
+  internal_api.UpdatePeerRequest:
+    properties:
+      allowed_ips:
+        type: string
+      dns:
+        type: string
+      name:
+        type: string
+      persistent_keepalive:
+        type: integer
+    type: object
+  internal_api.UpdateServerRequest:
+    properties:
+      address:
+        type: string
+      default_allowed_ips:
+        type: string
+      default_dns:
+        type: string
+      dns:
+        type: string
+      endpoint:
+        type: string
+      firewall_config:
+        $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.FirewallConfig'
+      listen_port:
+        type: integer
+      mtu:
+        type: integer
+      post_down:
+        type: string
+      post_up:
+        type: string
+      tunnel_subnet:
+        type: string
+    type: object
+  internal_api.UpdateTunnelRequest:
+    properties:
+      address:
+        type: string
+      description:
+        type: string
+      dns:
+        type: string
+      listen_port:
+        type: integer
+      mtu:
+        type: integer
+      name:
+        type: string
+      peer_allowed_ips:
+        type: string
+      peer_endpoint:
+        type: string
+      peer_public_key:
+        type: string
+      persistent_keepalive:
+        type: integer
+    type: object
+  internal_api.UpdateUserRequest:
+    properties:
+      name:
+        type: string
+      role:
+        type: string
+      username:
+        type: string
+    type: object
+  internal_api.UserInfoResponse:
+    properties:
+      email:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      role:
+        type: string
+    type: object
+  internal_api.WebAuthnCreatedResponse:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+    type: object
+  internal_api.WebAuthnOptionsResponse:
+    properties:
+      options: {}
+    type: object
+  internal_api.WebAuthnRegisterBeginResponse:
+    properties:
+      challenge_id:
+        type: string
+      options: {}
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: WireGuard UI
+  description: REST API for managing WireGuard VPN peers, tunnels, users, groups,
+    and ACLs.
+  license:
+    name: MIT
+  title: WireGuard UI API
+  version: "1.0"
+paths:
+  /api/v1/acls:
+    get:
+      description: Returns all ACL rules.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.ACLRule'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: List ACL rules
+      tags:
+      - acls
+    post:
+      consumes:
+      - application/json
+      description: Creates a new ACL rule.
+      parameters:
+      - description: ACL rule details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.CreateACLRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.ACLRule'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Create ACL rule
+      tags:
+      - acls
+  /api/v1/acls/{id}:
+    delete:
+      description: Deletes an ACL rule by ID.
+      parameters:
+      - description: ACL Rule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.MessageResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete ACL rule
+      tags:
+      - acls
+    get:
+      description: Returns a single ACL rule by ID.
+      parameters:
+      - description: ACL Rule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.ACLRule'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Get ACL rule
+      tags:
+      - acls
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing ACL rule.
+      parameters:
+      - description: ACL Rule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.UpdateACLRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.ACLRule'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Update ACL rule
+      tags:
+      - acls
+  /api/v1/acls/effective/{userID}:
+    get:
+      description: Returns the effective ACL rules for a given user (including group
+        memberships).
+      parameters:
+      - description: User ID
+        in: path
+        name: userID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.ACLRule'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Get effective ACL rules
+      tags:
+      - acls
+  /api/v1/acls/reload:
+    post:
+      description: Forces a reload of the ACL policy engine from the database.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.MessageResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Reload ACL engine
+      tags:
+      - acls
+  /api/v1/groups:
+    get:
+      description: Returns all groups.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.Group'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: List groups
+      tags:
+      - groups
+    post:
+      consumes:
+      - application/json
+      description: Creates a new group.
+      parameters:
+      - description: Group details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.CreateGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.Group'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Create group
+      tags:
+      - groups
+  /api/v1/groups/{id}:
+    delete:
+      description: Deletes a group by ID.
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.MessageResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete group
+      tags:
+      - groups
+    get:
+      description: Returns a single group by ID.
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.Group'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Get group
+      tags:
+      - groups
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing group.
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.UpdateGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.Group'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Update group
+      tags:
+      - groups
+  /api/v1/groups/{id}/members:
+    get:
+      description: Returns the members of a group.
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.User'
+            type: array
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: List group members
+      tags:
+      - groups
+  /api/v1/me/mfa:
+    get:
+      description: Returns the user's MFA enrollment status and registered credentials.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.MFAStatusResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Get MFA status
+      tags:
+      - mfa
+  /api/v1/me/mfa/totp:
+    delete:
+      description: Removes TOTP enrollment for the authenticated user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.MessageResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete TOTP enrollment
+      tags:
+      - mfa
+  /api/v1/me/mfa/totp/enroll:
+    post:
+      description: Generates a new TOTP secret for the authenticated user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.TOTPEnrollResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Enroll TOTP
+      tags:
+      - mfa
+  /api/v1/me/mfa/totp/verify:
+    post:
+      consumes:
+      - application/json
+      description: Verifies a TOTP code to complete enrollment.
+      parameters:
+      - description: TOTP code
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.TOTPVerifyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.MessageResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Verify TOTP enrollment
+      tags:
+      - mfa
+  /api/v1/me/mfa/webauthn/{id}:
+    delete:
+      description: Deletes a WebAuthn credential by ID.
+      parameters:
+      - description: Credential ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.MessageResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete WebAuthn credential
+      tags:
+      - mfa
+  /api/v1/me/mfa/webauthn/register/begin:
+    post:
+      description: Starts WebAuthn credential registration for the authenticated user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.WebAuthnRegisterBeginResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Begin WebAuthn registration
+      tags:
+      - mfa
+  /api/v1/me/mfa/webauthn/register/finish:
+    post:
+      consumes:
+      - application/json
+      description: Completes WebAuthn credential registration.
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.WebAuthnCreatedResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Finish WebAuthn registration
+      tags:
+      - mfa
+  /api/v1/me/password:
+    post:
+      consumes:
+      - application/json
+      description: Allows the authenticated user to change their own password. Revokes
+        all sessions.
+      parameters:
+      - description: Current and new password
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.ChangePasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.MessageResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Change own password
+      tags:
+      - self-service
+  /api/v1/me/tokens:
+    get:
+      description: Returns all API tokens for the authenticated user with expiration
+        status.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.TokenWithStatus'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: List API tokens
+      tags:
+      - self-service
+    post:
+      consumes:
+      - application/json
+      description: Creates a new API token for the authenticated user. The raw token
+        is returned only once.
+      parameters:
+      - description: Token details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.CreateTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.CreateTokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Create API token
+      tags:
+      - self-service
+  /api/v1/me/tokens/{id}:
+    delete:
+      description: Deletes an API token by ID.
+      parameters:
+      - description: Token ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.MessageResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete API token
+      tags:
+      - self-service
+  /api/v1/peers:
+    get:
+      description: Returns all peers. Admins see all peers; non-admins see only their
+        own.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.Peer'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: List peers
+      tags:
+      - peers
+    post:
+      consumes:
+      - application/json
+      description: Creates a new WireGuard peer. Auto-allocates IP address.
+      parameters:
+      - description: Peer configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.CreatePeerRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.CreatePeerResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "403":
+          description: Forbidden
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Create peer
+      tags:
+      - peers
+  /api/v1/peers/{id}:
+    delete:
+      description: Deletes a peer and removes it from the WireGuard interface.
+      parameters:
+      - description: Peer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.MessageResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Delete peer
+      tags:
+      - peers
+    get:
+      description: Returns a single peer by ID. Ownership enforced for non-admins.
+      parameters:
+      - description: Peer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.Peer'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get peer
+      tags:
+      - peers
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing peer's configuration.
+      parameters:
+      - description: Peer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.UpdatePeerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.Peer'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Update peer
+      tags:
+      - peers
+  /api/v1/peers/{id}/config:
+    get:
+      description: Returns the WireGuard configuration file for a peer.
+      parameters:
+      - description: Peer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: WireGuard configuration file
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Export peer config
+      tags:
+      - peers
+  /api/v1/peers/{id}/qrcode:
+    get:
+      description: Returns a QR code image of the peer's WireGuard configuration.
+      parameters:
+      - description: Peer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - image/png
+      responses:
+        "200":
+          description: QR code PNG image
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Export peer QR code
+      tags:
+      - peers
+  /api/v1/peers/{id}/regenerate:
+    post:
+      consumes:
+      - application/json
+      description: Replaces the peer's public key and generates a new preshared key.
+      parameters:
+      - description: Peer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: New public key
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.RegeneratePeerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.CreatePeerResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Regenerate peer keys
+      tags:
+      - peers
+  /api/v1/peers/{id}/toggle:
+    patch:
+      description: Enables or disables a peer.
+      parameters:
+      - description: Peer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.Peer'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Toggle peer
+      tags:
+      - peers
+  /api/v1/server:
+    get:
+      description: Returns the WireGuard server configuration. Non-admin users get
+        redacted output.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ServerConfigResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Get server config
+      tags:
+      - server
+    put:
+      consumes:
+      - application/json
+      description: Updates the WireGuard server configuration. Requires admin role.
+      parameters:
+      - description: Server configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.UpdateServerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.ServerConfig'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Update server config
+      tags:
+      - server
+  /api/v1/server/apply:
+    post:
+      description: Applies the current server configuration to the WireGuard interface.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.MessageResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Apply server config
+      tags:
+      - server
+  /api/v1/stats:
+    get:
+      description: Returns transfer statistics for all peers. Non-admins see only
+        their own peers.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.PeerStats'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get peer stats
+      tags:
+      - stats
+  /api/v1/stats/stream:
+    get:
+      description: Streams peer transfer statistics via Server-Sent Events.
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream of peer stats
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Stream peer stats
+      tags:
+      - stats
+  /api/v1/tunnels:
+    get:
+      description: Returns all tunnels with their runtime status.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/internal_api.TunnelWithStatus'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: List tunnels
+      tags:
+      - tunnels
+    post:
+      consumes:
+      - application/json
+      description: Creates a new WireGuard tunnel.
+      parameters:
+      - description: Tunnel configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.CreateTunnelRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.CreateTunnelResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Create tunnel
+      tags:
+      - tunnels
+  /api/v1/tunnels/{id}:
+    delete:
+      description: Deletes a tunnel and stops it if running.
+      parameters:
+      - description: Tunnel ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.MessageResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Delete tunnel
+      tags:
+      - tunnels
+    get:
+      description: Returns a single tunnel by ID.
+      parameters:
+      - description: Tunnel ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.Tunnel'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get tunnel
+      tags:
+      - tunnels
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing tunnel's configuration.
+      parameters:
+      - description: Tunnel ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.UpdateTunnelRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.Tunnel'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Update tunnel
+      tags:
+      - tunnels
+  /api/v1/tunnels/{id}/config:
+    get:
+      description: Returns the WireGuard configuration file for the remote side of
+        a tunnel.
+      parameters:
+      - description: Tunnel ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: WireGuard configuration file
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get tunnel remote config
+      tags:
+      - tunnels
+  /api/v1/tunnels/{id}/status:
+    get:
+      description: Returns the runtime status of a tunnel.
+      parameters:
+      - description: Tunnel ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.TunnelStatus'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get tunnel status
+      tags:
+      - tunnels
+  /api/v1/tunnels/{id}/toggle:
+    patch:
+      description: Enables or disables a tunnel.
+      parameters:
+      - description: Tunnel ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.Tunnel'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                error:
+                  $ref: '#/definitions/internal_api.APIError'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Toggle tunnel
+      tags:
+      - tunnels
+  /api/v1/users:
+    get:
+      description: Returns all users.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.User'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: List users
+      tags:
+      - users
+    post:
+      consumes:
+      - application/json
+      description: Creates a new local user. Requires admin role.
+      parameters:
+      - description: User details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.CreateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.User'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Create user
+      tags:
+      - users
+  /api/v1/users/{id}:
+    delete:
+      description: Deletes a user by ID. Requires admin role. Cannot delete yourself.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.MessageResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete user
+      tags:
+      - users
+    get:
+      description: Returns a single user by ID.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.User'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Get user
+      tags:
+      - users
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing user. Requires admin role.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.UpdateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.User'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Update user
+      tags:
+      - users
+  /api/v1/users/{id}/groups:
+    put:
+      consumes:
+      - application/json
+      description: Sets the group memberships for a user.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Group IDs
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.SetUserGroupsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_hayward-solutions_wireguard-ui_internal_domain.Group'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Set user groups
+      tags:
+      - users
+  /api/v1/users/{id}/reset-password:
+    post:
+      consumes:
+      - application/json
+      description: Resets a user's password. Requires admin role. Revokes all sessions.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: New password
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.ResetPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.MessageResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Reset user password
+      tags:
+      - users
+  /auth/callback:
+    get:
+      description: Handles the OIDC provider callback after authentication.
+      parameters:
+      - description: OAuth state parameter
+        in: query
+        name: state
+        required: true
+        type: string
+      - description: Authorization code
+        in: query
+        name: code
+        required: true
+        type: string
+      responses:
+        "302":
+          description: Redirect to home
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      summary: OIDC callback
+      tags:
+      - auth
+  /auth/info:
+    get:
+      description: Returns available authentication methods.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.AuthInfoResponse'
+              type: object
+      summary: Get auth info
+      tags:
+      - auth
+  /auth/login:
+    get:
+      description: Redirects to OIDC provider if configured, otherwise returns an
+        error indicating local login should be used.
+      produces:
+      - application/json
+      responses:
+        "302":
+          description: Redirect to OIDC provider
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      summary: Login page / OIDC redirect
+      tags:
+      - auth
+    post:
+      consumes:
+      - application/json
+      description: Authenticates a user with username and password. Returns user info
+        or an MFA challenge if MFA is enabled.
+      parameters:
+      - description: Login credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: MFA required
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.MFARequiredResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      summary: Local login
+      tags:
+      - auth
+  /auth/logout:
+    post:
+      description: Revokes the session and clears authentication cookies.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.MessageResponse'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Logout
+      tags:
+      - auth
+  /auth/me:
+    get:
+      description: Returns information about the currently authenticated user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.UserInfoResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      security:
+      - BearerAuth: []
+      summary: Get current user
+      tags:
+      - auth
+  /auth/mfa/challenge:
+    post:
+      consumes:
+      - application/json
+      description: Verifies a TOTP code during the MFA login step.
+      parameters:
+      - description: MFA token and TOTP code
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.MFAChallengeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.LoginResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      summary: MFA TOTP challenge
+      tags:
+      - auth
+  /auth/mfa/webauthn/begin:
+    post:
+      consumes:
+      - application/json
+      description: Starts a WebAuthn assertion for MFA login.
+      parameters:
+      - description: MFA token
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.MFATokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.WebAuthnOptionsResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      summary: MFA WebAuthn begin
+      tags:
+      - auth
+  /auth/mfa/webauthn/finish:
+    post:
+      consumes:
+      - application/json
+      description: Completes a WebAuthn assertion for MFA login.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.LoginResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      summary: MFA WebAuthn finish
+      tags:
+      - auth
+  /auth/passkey/begin:
+    post:
+      description: Starts a passwordless WebAuthn (passkey) login flow.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.PasskeyLoginBeginResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      summary: Passkey login begin
+      tags:
+      - auth
+  /auth/passkey/finish:
+    post:
+      consumes:
+      - application/json
+      description: Completes a passwordless WebAuthn (passkey) login flow.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.LoginResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      summary: Passkey login finish
+      tags:
+      - auth
+  /auth/refresh:
+    post:
+      description: Issues a new short-lived JWT from a valid session cookie.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/internal_api.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_api.UserInfoResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.Response'
+      summary: Refresh token
+      tags:
+      - auth
+schemes:
+- http
+- https
+securityDefinitions:
+  ApiKeyAuth:
+    description: Admin API key for machine-to-machine access.
+    in: header
+    name: X-API-Key
+    type: apiKey
+  BearerAuth:
+    description: JWT token or API key. Use "Bearer {token}" format.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

@@ -45,7 +45,7 @@ test-tunnel:
 
 # Generate OpenAPI/Swagger spec
 swagger:
-	swag init -g cmd/server/main.go -o docs/ --parseInternal --parseDependency --quiet
+	swag init -g cmd/server/main.go -o docs/ --parseInternal --parseDependency
 
 # Lint
 lint:

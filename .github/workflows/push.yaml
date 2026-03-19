@@ -22,7 +22,7 @@ jobs:
         run: mkdir -p frontend/build && touch frontend/build/.gitkeep
 
       - name: Generate OpenAPI spec
-        run: go install github.com/swaggo/swag/v2/cmd/swag@latest && swag init -g cmd/server/main.go -o docs/ --parseInternal --parseDependency --quiet
+        run: go install github.com/swaggo/swag/cmd/swag@latest && swag init -g cmd/server/main.go -o docs/ --parseInternal --parseDependency --quiet
 
       - name: Build
         run: go build ./...
