@@ -325,6 +325,7 @@ func run() error {
 			ClientSecret: cfg.OIDCClientSecret,
 			RedirectURL:  cfg.OIDCRedirectURL,
 			Scopes:       cfg.OIDCScopes,
+			GroupsClaim:  cfg.OIDCGroupsClaim,
 		})
 		if err != nil {
 			slog.Error("failed to init oidc provider", "error", err)

@@ -9,7 +9,7 @@ services:
       - DATABASE_DSN=/data/wireguard.db
       # Local auth (required if OIDC not configured)
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?Set ADMIN_PASSWORD}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-wgadmin}
       - ADMIN_API_KEY=${ADMIN_API_KEY:-}
       # OIDC (optional — leave blank to use local auth only)
       - OIDC_ISSUER_URL=${OIDC_ISSUER_URL:-}
@@ -19,9 +19,9 @@ services:
       # OIDC group whose members are granted admin (new users default to viewer)
       - OIDC_ADMIN_GROUP=${OIDC_ADMIN_GROUP:-}
       # JWT
-      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET}
+      - JWT_SECRET=${JWT_SECRET:-jwt-changeme-server-0}
       # Encryption
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?Set ENCRYPTION_KEY}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-enc-key-changeme-server-0}
       # WireGuard
       - WG_ENDPOINT=${WG_ENDPOINT:-localhost:51820}
       - WG_ADDRESS=${WG_ADDRESS:-10.0.0.1/24}
@@ -53,9 +53,9 @@ services:
       - DATABASE_DRIVER=sqlite
       - DATABASE_DSN=/data/wireguard.db
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?Set ADMIN_PASSWORD}
-      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?Set ENCRYPTION_KEY}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-wgadmin}
+      - JWT_SECRET=${JWT_SECRET:-jwt-changeme}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-this}
       - WG_ENDPOINT=${WG_ENDPOINT:-localhost:51820}
       - WG_ADDRESS=${WG_ADDRESS:-10.0.0.1/24}
       - WG_LISTEN_PORT=${WG_LISTEN_PORT:-51820}

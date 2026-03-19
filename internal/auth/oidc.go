@@ -13,6 +13,7 @@ type OIDCProvider struct {
 	provider     *oidc.Provider
 	oauth2Config oauth2.Config
 	verifier     *oidc.IDTokenVerifier
+	groupsClaim  string
 }
 
 type OIDCConfig struct {
@@ -21,6 +22,7 @@ type OIDCConfig struct {
 	ClientSecret string
 	RedirectURL  string
 	Scopes       string
+	GroupsClaim  string
 }
 
 type OIDCUser struct {
@@ -54,10 +56,16 @@ func NewOIDCProvider(ctx context.Context, cfg OIDCConfig) (*OIDCProvider, error)
 
 	verifier := provider.Verifier(&oidc.Config{ClientID: cfg.ClientID})
 
+	groupsClaim := cfg.GroupsClaim
+	if groupsClaim == "" {
+		groupsClaim = "cognito:groups"
+	}
+
 	return &OIDCProvider{
 		provider:     provider,
 		oauth2Config: oauth2Config,
 		verifier:     verifier,
+		groupsClaim:  groupsClaim,
 	}, nil
 }
 
@@ -83,19 +91,29 @@ func (p *OIDCProvider) Exchange(ctx context.Context, code string) (*OIDCUser, er
 		return nil, fmt.Errorf("verify id_token: %w", err)
 	}
 
-	var claims struct {
-		Email  string   `json:"email"`
-		Name   string   `json:"name"`
-		Groups []string `json:"groups"`
-	}
-	if err := idToken.Claims(&claims); err != nil {
+	var rawClaims map[string]interface{}
+	if err := idToken.Claims(&rawClaims); err != nil {
 		return nil, fmt.Errorf("parse claims: %w", err)
+	}
+
+	email, _ := rawClaims["email"].(string)
+	name, _ := rawClaims["name"].(string)
+
+	var groups []string
+	if gc, ok := rawClaims[p.groupsClaim]; ok {
+		if arr, ok := gc.([]interface{}); ok {
+			for _, v := range arr {
+				if s, ok := v.(string); ok {
+					groups = append(groups, s)
+				}
+			}
+		}
 	}
 
 	return &OIDCUser{
 		Subject: idToken.Subject,
-		Email:   claims.Email,
-		Name:    claims.Name,
-		Groups:  claims.Groups,
+		Email:   email,
+		Name:    name,
+		Groups:  groups,
 	}, nil
 }
