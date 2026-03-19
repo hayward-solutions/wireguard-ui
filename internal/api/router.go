@@ -22,6 +22,8 @@ type RouterConfig struct {
 	TunnelManager *wireguard.TunnelManager
 	JWTManager   *auth.JWTManager
 	OIDCProvider *auth.OIDCProvider
+	WebAuthn     *auth.WebAuthnProvider
+	TOTP         *auth.TOTPProvider
 	Monitor      *monitor.Monitor
 	PolicyEngine *acl.PolicyEngine
 	FrontendFS   fs.FS
@@ -64,15 +66,28 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 	}))
 
 	authHandler := NewAuthHandler(AuthHandlerConfig{
-		OIDC:           cfg.OIDCProvider,
-		JWT:            cfg.JWTManager,
-		Store:          cfg.Store,
-		LoginLimiter:   cfg.LoginRateLimiter,
-		OIDCAdminGroup: cfg.OIDCAdminGroup,
-		SecureCookie:   cfg.RequireHTTPS,
-		PolicyEngine:   cfg.PolicyEngine,
-		SessionExpiry:  cfg.SessionExpiry,
+		OIDC:            cfg.OIDCProvider,
+		JWT:             cfg.JWTManager,
+		Store:           cfg.Store,
+		LoginLimiter:    cfg.LoginRateLimiter,
+		OIDCAdminGroup:  cfg.OIDCAdminGroup,
+		SecureCookie:    cfg.RequireHTTPS,
+		PolicyEngine:    cfg.PolicyEngine,
+		SessionExpiry:   cfg.SessionExpiry,
+		WebAuthnEnabled: cfg.WebAuthn != nil,
 	})
+
+	var mfaHandler *MFAHandler
+	if cfg.WebAuthn != nil && cfg.TOTP != nil {
+		mfaHandler = NewMFAHandler(MFAHandlerConfig{
+			Store:         cfg.Store,
+			WebAuthn:      cfg.WebAuthn,
+			TOTP:          cfg.TOTP,
+			JWT:           cfg.JWTManager,
+			SecureCookie:  cfg.RequireHTTPS,
+			SessionExpiry: cfg.SessionExpiry,
+		})
+	}
 
 	// Health check (unauthenticated)
 	r.Get("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {
@@ -90,6 +105,15 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		r.Get("/auth/callback", authHandler.HandleCallback)
 		r.With(CSRFMiddleware).Post("/auth/logout", authHandler.HandleLogout)
 		r.With(CSRFMiddleware).Post("/auth/refresh", authHandler.HandleRefresh)
+
+		// MFA login challenge routes (unauthenticated, rate-limited)
+		if mfaHandler != nil {
+			r.Post("/auth/mfa/challenge", mfaHandler.HandleMFAVerifyTOTP)
+			r.Post("/auth/mfa/webauthn/begin", mfaHandler.HandleMFAWebAuthnBegin)
+			r.Post("/auth/mfa/webauthn/finish", mfaHandler.HandleMFAWebAuthnFinish)
+			r.Post("/auth/passkey/begin", mfaHandler.HandlePasskeyLoginBegin)
+			r.Post("/auth/passkey/finish", mfaHandler.HandlePasskeyLoginFinish)
+		}
 	})
 
 	// Authenticated API routes
@@ -139,6 +163,17 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		r.Get("/api/v1/me/tokens", tokenHandler.HandleList)
 		r.Post("/api/v1/me/tokens", tokenHandler.HandleCreate)
 		r.Delete("/api/v1/me/tokens/{id}", tokenHandler.HandleDelete)
+
+		// MFA credential management (authenticated)
+		if mfaHandler != nil {
+			r.Get("/api/v1/me/mfa", mfaHandler.HandleMFAStatus)
+			r.Post("/api/v1/me/mfa/webauthn/register/begin", mfaHandler.HandleWebAuthnRegisterBegin)
+			r.Post("/api/v1/me/mfa/webauthn/register/finish", mfaHandler.HandleWebAuthnRegisterFinish)
+			r.Delete("/api/v1/me/mfa/webauthn/{id}", mfaHandler.HandleWebAuthnDelete)
+			r.Post("/api/v1/me/mfa/totp/enroll", mfaHandler.HandleTOTPEnroll)
+			r.Post("/api/v1/me/mfa/totp/verify", mfaHandler.HandleTOTPVerify)
+			r.Delete("/api/v1/me/mfa/totp", mfaHandler.HandleTOTPDelete)
+		}
 
 		// Groups (admin only)
 		groupHandler := NewGroupHandler(cfg.Store, cfg.PolicyEngine)

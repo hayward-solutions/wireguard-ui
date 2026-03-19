@@ -373,7 +373,7 @@ func (s *PostgresStore) DeletePeer(ctx context.Context, id string) error {
 
 func (s *PostgresStore) ListUsers(ctx context.Context) ([]domain.User, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, username, password_hash, name, role, last_login,
+		SELECT id, username, password_hash, name, role, mfa_enabled, last_login,
 		       failed_login_attempts, locked_until, created_at
 		FROM users ORDER BY created_at`)
 	if err != nil {
@@ -384,7 +384,7 @@ func (s *PostgresStore) ListUsers(ctx context.Context) ([]domain.User, error) {
 	var users []domain.User
 	for rows.Next() {
 		var u domain.User
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.LastLogin,
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.MFAEnabled, &u.LastLogin,
 			&u.FailedLoginAttempts, &u.LockedUntil, &u.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan user: %w", err)
 		}
@@ -395,12 +395,12 @@ func (s *PostgresStore) ListUsers(ctx context.Context) ([]domain.User, error) {
 
 func (s *PostgresStore) GetUser(ctx context.Context, id string) (*domain.User, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, username, password_hash, name, role, last_login,
+		SELECT id, username, password_hash, name, role, mfa_enabled, last_login,
 		       failed_login_attempts, locked_until, created_at
 		FROM users WHERE id = $1`, id)
 
 	var u domain.User
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.LastLogin,
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.MFAEnabled, &u.LastLogin,
 		&u.FailedLoginAttempts, &u.LockedUntil, &u.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -413,12 +413,12 @@ func (s *PostgresStore) GetUser(ctx context.Context, id string) (*domain.User, e
 
 func (s *PostgresStore) GetUserByUsername(ctx context.Context, username string) (*domain.User, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, username, password_hash, name, role, last_login,
+		SELECT id, username, password_hash, name, role, mfa_enabled, last_login,
 		       failed_login_attempts, locked_until, created_at
 		FROM users WHERE username = $1`, username)
 
 	var u domain.User
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.LastLogin,
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.MFAEnabled, &u.LastLogin,
 		&u.FailedLoginAttempts, &u.LockedUntil, &u.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -788,7 +788,7 @@ func (s *PostgresStore) SyncOIDCGroups(ctx context.Context, userID string, group
 
 func (s *PostgresStore) GetGroupMembers(ctx context.Context, groupID string) ([]domain.User, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT u.id, u.username, u.password_hash, u.name, u.role, u.last_login, u.created_at
+		SELECT u.id, u.username, u.password_hash, u.name, u.role, u.mfa_enabled, u.last_login, u.created_at
 		FROM users u
 		JOIN user_groups ug ON ug.user_id = u.id
 		WHERE ug.group_id = $1
@@ -801,7 +801,7 @@ func (s *PostgresStore) GetGroupMembers(ctx context.Context, groupID string) ([]
 	var users []domain.User
 	for rows.Next() {
 		var u domain.User
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.LastLogin, &u.CreatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Name, &u.Role, &u.MFAEnabled, &u.LastLogin, &u.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan user: %w", err)
 		}
 		users = append(users, u)
@@ -1094,6 +1094,201 @@ func (s *PostgresStore) DeleteTunnel(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM tunnels WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete tunnel: %w", err)
+	}
+	return nil
+}
+
+// --- MFA: WebAuthn Credentials ---
+
+func (s *PostgresStore) ListWebAuthnCredentials(ctx context.Context, userID string) ([]domain.WebAuthnCredential, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, user_id, credential_id, public_key, attestation_type, aaguid,
+		       sign_count, transports, name, created_at, last_used_at
+		FROM user_webauthn_credentials WHERE user_id = $1 ORDER BY created_at`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list webauthn credentials: %w", err)
+	}
+	defer rows.Close()
+
+	var creds []domain.WebAuthnCredential
+	for rows.Next() {
+		var c domain.WebAuthnCredential
+		var transportsJSON []byte
+		if err := rows.Scan(&c.ID, &c.UserID, &c.CredentialID, &c.PublicKey, &c.AttestationType,
+			&c.AAGUID, &c.SignCount, &transportsJSON, &c.Name, &c.CreatedAt, &c.LastUsedAt); err != nil {
+			return nil, fmt.Errorf("scan webauthn credential: %w", err)
+		}
+		_ = json.Unmarshal(transportsJSON, &c.Transports)
+		creds = append(creds, c)
+	}
+	return creds, rows.Err()
+}
+
+func (s *PostgresStore) GetWebAuthnCredentialByCredentialID(ctx context.Context, credentialID string) (*domain.WebAuthnCredential, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, user_id, credential_id, public_key, attestation_type, aaguid,
+		       sign_count, transports, name, created_at, last_used_at
+		FROM user_webauthn_credentials WHERE credential_id = $1`, credentialID)
+
+	var c domain.WebAuthnCredential
+	var transportsJSON []byte
+	err := row.Scan(&c.ID, &c.UserID, &c.CredentialID, &c.PublicKey, &c.AttestationType,
+		&c.AAGUID, &c.SignCount, &transportsJSON, &c.Name, &c.CreatedAt, &c.LastUsedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get webauthn credential: %w", err)
+	}
+	_ = json.Unmarshal(transportsJSON, &c.Transports)
+	return &c, nil
+}
+
+func (s *PostgresStore) CreateWebAuthnCredential(ctx context.Context, cred *domain.WebAuthnCredential) error {
+	transportsJSON, _ := json.Marshal(cred.Transports)
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO user_webauthn_credentials (id, user_id, credential_id, public_key, attestation_type, aaguid, sign_count, transports, name, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		cred.ID, cred.UserID, cred.CredentialID, cred.PublicKey, cred.AttestationType,
+		cred.AAGUID, cred.SignCount, transportsJSON, cred.Name, cred.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("create webauthn credential: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) UpdateWebAuthnSignCount(ctx context.Context, credentialID string, signCount uint32) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE user_webauthn_credentials SET sign_count = $1, last_used_at = CURRENT_TIMESTAMP
+		WHERE credential_id = $2`, signCount, credentialID)
+	if err != nil {
+		return fmt.Errorf("update webauthn sign count: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) DeleteWebAuthnCredential(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM user_webauthn_credentials WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete webauthn credential: %w", err)
+	}
+	return nil
+}
+
+// --- MFA: TOTP ---
+
+func (s *PostgresStore) GetUserTOTP(ctx context.Context, userID string) (*domain.UserTOTP, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT user_id, secret, verified, created_at
+		FROM user_totp WHERE user_id = $1`, userID)
+
+	var t domain.UserTOTP
+	var encSecret string
+	err := row.Scan(&t.UserID, &encSecret, &t.Verified, &t.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get user totp: %w", err)
+	}
+	if s.encryptor != nil {
+		t.Secret, err = s.encryptor.Decrypt(encSecret)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt totp secret: %w", err)
+		}
+	} else {
+		t.Secret = encSecret
+	}
+	return &t, nil
+}
+
+func (s *PostgresStore) CreateUserTOTP(ctx context.Context, totp *domain.UserTOTP) error {
+	secret := totp.Secret
+	if s.encryptor != nil {
+		var err error
+		secret, err = s.encryptor.Encrypt(secret)
+		if err != nil {
+			return fmt.Errorf("encrypt totp secret: %w", err)
+		}
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO user_totp (user_id, secret, verified, created_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT(user_id) DO UPDATE SET secret = EXCLUDED.secret, verified = EXCLUDED.verified`,
+		totp.UserID, secret, totp.Verified, totp.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("create user totp: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) VerifyUserTOTP(ctx context.Context, userID string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE user_totp SET verified = TRUE WHERE user_id = $1`, userID)
+	if err != nil {
+		return fmt.Errorf("verify user totp: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) DeleteUserTOTP(ctx context.Context, userID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM user_totp WHERE user_id = $1`, userID)
+	if err != nil {
+		return fmt.Errorf("delete user totp: %w", err)
+	}
+	return nil
+}
+
+// --- MFA: Settings ---
+
+func (s *PostgresStore) SetMFAEnabled(ctx context.Context, userID string, enabled bool) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET mfa_enabled = $1 WHERE id = $2`, enabled, userID)
+	if err != nil {
+		return fmt.Errorf("set mfa enabled: %w", err)
+	}
+	return nil
+}
+
+// --- MFA: Challenges ---
+
+func (s *PostgresStore) CreateMFAChallenge(ctx context.Context, challenge *domain.MFAChallenge) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO mfa_challenges (id, user_id, created_at, expires_at, used)
+		VALUES ($1, $2, $3, $4, FALSE)`,
+		challenge.ID, challenge.UserID, challenge.CreatedAt, challenge.ExpiresAt)
+	if err != nil {
+		return fmt.Errorf("create mfa challenge: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) GetMFAChallenge(ctx context.Context, id string) (*domain.MFAChallenge, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, user_id, created_at, expires_at, used
+		FROM mfa_challenges WHERE id = $1`, id)
+
+	var c domain.MFAChallenge
+	err := row.Scan(&c.ID, &c.UserID, &c.CreatedAt, &c.ExpiresAt, &c.Used)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get mfa challenge: %w", err)
+	}
+	return &c, nil
+}
+
+func (s *PostgresStore) UseMFAChallenge(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE mfa_challenges SET used = TRUE WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("use mfa challenge: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) CleanExpiredMFAChallenges(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM mfa_challenges WHERE expires_at < CURRENT_TIMESTAMP OR used = TRUE`)
+	if err != nil {
+		return fmt.Errorf("clean expired mfa challenges: %w", err)
 	}
 	return nil
 }

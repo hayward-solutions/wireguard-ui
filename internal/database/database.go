@@ -82,6 +82,28 @@ type Store interface {
 	UpdateTunnel(ctx context.Context, t *domain.Tunnel) error
 	DeleteTunnel(ctx context.Context, id string) error
 
+	// MFA - WebAuthn credentials
+	ListWebAuthnCredentials(ctx context.Context, userID string) ([]domain.WebAuthnCredential, error)
+	GetWebAuthnCredentialByCredentialID(ctx context.Context, credentialID string) (*domain.WebAuthnCredential, error)
+	CreateWebAuthnCredential(ctx context.Context, cred *domain.WebAuthnCredential) error
+	UpdateWebAuthnSignCount(ctx context.Context, credentialID string, signCount uint32) error
+	DeleteWebAuthnCredential(ctx context.Context, id string) error
+
+	// MFA - TOTP
+	GetUserTOTP(ctx context.Context, userID string) (*domain.UserTOTP, error)
+	CreateUserTOTP(ctx context.Context, totp *domain.UserTOTP) error
+	VerifyUserTOTP(ctx context.Context, userID string) error
+	DeleteUserTOTP(ctx context.Context, userID string) error
+
+	// MFA - Settings
+	SetMFAEnabled(ctx context.Context, userID string, enabled bool) error
+
+	// MFA - Challenges
+	CreateMFAChallenge(ctx context.Context, challenge *domain.MFAChallenge) error
+	GetMFAChallenge(ctx context.Context, id string) (*domain.MFAChallenge, error)
+	UseMFAChallenge(ctx context.Context, id string) error
+	CleanExpiredMFAChallenges(ctx context.Context) error
+
 	// Encryption
 	HasEncryptedData(ctx context.Context) (bool, error)
 

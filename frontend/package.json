@@ -27,6 +27,7 @@
 	},
 	"dependencies": {
 		"@noble/curves": "^2.0.1",
+		"@simplewebauthn/browser": "^13.3.0",
 		"qrcode": "^1.5.4"
 	}
 }

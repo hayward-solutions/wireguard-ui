@@ -8,6 +8,7 @@ type User struct {
 	PasswordHash        string     `json:"-"`
 	Name                string     `json:"name"`
 	Role                string     `json:"role"`
+	MFAEnabled          bool       `json:"mfa_enabled"`
 	LastLogin           *time.Time `json:"last_login,omitempty"`
 	FailedLoginAttempts int        `json:"-"`
 	LockedUntil         *time.Time `json:"-"`
