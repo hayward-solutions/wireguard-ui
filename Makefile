@@ -1,10 +1,10 @@
-.PHONY: dev dev-backend dev-frontend build test test-vpn test-tunnel lint docker clean
+.PHONY: dev dev-backend dev-frontend build test test-vpn test-tunnel lint docker clean swagger
 
 # Run both frontend and backend with hot reload
 dev:
 	$(MAKE) -j2 dev-backend dev-frontend
 
-dev-backend:
+dev-backend: swagger
 	WG_MOCK_MODE=true WG_ENDPOINT=localhost:51820 \
 	  go run -ldflags="-X github.com/hayward-solutions/wireguard-ui/internal/config.devBuild=true" ./cmd/server
 
@@ -17,7 +17,7 @@ build: build-frontend build-backend
 build-frontend:
 	cd frontend && npm ci && npm run build
 
-build-backend:
+build-backend: swagger
 	CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/wireguard-ui ./cmd/server
 
 # Run tests
@@ -42,6 +42,10 @@ test-tunnel:
 	  EXIT_CODE=$$?; \
 	  docker compose -f tests/integration/tunnel/docker-compose.test.yml down -v; \
 	  exit $$EXIT_CODE
+
+# Generate OpenAPI/Swagger spec
+swagger:
+	swag init -g cmd/server/main.go -o docs/ --parseInternal --parseDependency --quiet
 
 # Lint
 lint:

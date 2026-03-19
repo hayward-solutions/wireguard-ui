@@ -22,12 +22,32 @@ func NewStatsHandler(mon *monitor.Monitor, store database.Store) *StatsHandler {
 	return &StatsHandler{mon: mon, store: store}
 }
 
+// HandleGet godoc
+// @Summary Get peer stats
+// @Description Returns transfer statistics for all peers. Non-admins see only their own peers.
+// @Tags stats
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} Response{data=[]domain.PeerStats}
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 500 {object} Response{error=APIError}
+// @Router /api/v1/stats [get]
 func (h *StatsHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	stats := h.mon.GetStats()
 	stats = h.filterStats(r, stats)
 	writeJSON(w, http.StatusOK, stats)
 }
 
+// HandleStream godoc
+// @Summary Stream peer stats
+// @Description Streams peer transfer statistics via Server-Sent Events.
+// @Tags stats
+// @Produce text/event-stream
+// @Security BearerAuth
+// @Success 200 {string} string "SSE stream of peer stats"
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 500 {object} Response{error=APIError}
+// @Router /api/v1/stats/stream [get]
 func (h *StatsHandler) HandleStream(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {

@@ -9,11 +9,13 @@ RUN npm run build
 # Stage 2: Build backend
 FROM golang:1.25-alpine AS backend-builder
 RUN apk add --no-cache git
+RUN go install github.com/swaggo/swag/v2/cmd/swag@latest
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=frontend-builder /app/frontend/build ./frontend/build
+RUN swag init -g cmd/server/main.go -o docs/ --parseInternal --parseDependency --quiet
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /wireguard-ui ./cmd/server
 
 # Stage 3: Runtime

@@ -22,6 +22,15 @@ func NewACLHandler(store database.Store, engine *acl.PolicyEngine) *ACLHandler {
 	return &ACLHandler{store: store, engine: engine}
 }
 
+// HandleList godoc
+// @Summary List ACL rules
+// @Description Returns all ACL rules.
+// @Tags acls
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {array} domain.ACLRule
+// @Failure 500 {object} Response
+// @Router /api/v1/acls [get]
 func (h *ACLHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	rules, err := h.store.ListACLRules(r.Context())
 	if err != nil {
@@ -35,6 +44,16 @@ func (h *ACLHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rules)
 }
 
+// HandleGet godoc
+// @Summary Get ACL rule
+// @Description Returns a single ACL rule by ID.
+// @Tags acls
+// @Security BearerAuth
+// @Produce json
+// @Param id path string true "ACL Rule ID"
+// @Success 200 {object} domain.ACLRule
+// @Failure 404 {object} Response
+// @Router /api/v1/acls/{id} [get]
 func (h *ACLHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	rule, err := h.store.GetACLRule(r.Context(), id)
@@ -50,18 +69,19 @@ func (h *ACLHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rule)
 }
 
+// HandleCreate godoc
+// @Summary Create ACL rule
+// @Description Creates a new ACL rule.
+// @Tags acls
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param body body CreateACLRuleRequest true "ACL rule details"
+// @Success 201 {object} domain.ACLRule
+// @Failure 400 {object} Response
+// @Router /api/v1/acls [post]
 func (h *ACLHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Name        string  `json:"name"`
-		Description string  `json:"description"`
-		Priority    int     `json:"priority"`
-		Protocol    string  `json:"protocol"`
-		DstCIDR     string  `json:"dst_cidr"`
-		DstPorts    string  `json:"dst_ports"`
-		GroupID     *string `json:"group_id"`
-		UserID      *string `json:"user_id"`
-		Enabled     *bool   `json:"enabled"`
-	}
+	var req CreateACLRuleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -110,6 +130,19 @@ func (h *ACLHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, rule)
 }
 
+// HandleUpdate godoc
+// @Summary Update ACL rule
+// @Description Updates an existing ACL rule.
+// @Tags acls
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path string true "ACL Rule ID"
+// @Param body body UpdateACLRuleRequest true "Fields to update"
+// @Success 200 {object} domain.ACLRule
+// @Failure 400 {object} Response
+// @Failure 404 {object} Response
+// @Router /api/v1/acls/{id} [put]
 func (h *ACLHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	rule, err := h.store.GetACLRule(r.Context(), id)
@@ -123,17 +156,7 @@ func (h *ACLHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Name        *string `json:"name"`
-		Description *string `json:"description"`
-		Priority    *int    `json:"priority"`
-		Protocol    *string `json:"protocol"`
-		DstCIDR     *string `json:"dst_cidr"`
-		DstPorts    *string `json:"dst_ports"`
-		GroupID     *string `json:"group_id"`
-		UserID      *string `json:"user_id"`
-		Enabled     *bool   `json:"enabled"`
-	}
+	var req UpdateACLRuleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -187,6 +210,16 @@ func (h *ACLHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rule)
 }
 
+// HandleDelete godoc
+// @Summary Delete ACL rule
+// @Description Deletes an ACL rule by ID.
+// @Tags acls
+// @Security BearerAuth
+// @Produce json
+// @Param id path string true "ACL Rule ID"
+// @Success 200 {object} Response{data=MessageResponse}
+// @Failure 404 {object} Response
+// @Router /api/v1/acls/{id} [delete]
 func (h *ACLHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	rule, err := h.store.GetACLRule(r.Context(), id)
@@ -212,6 +245,16 @@ func (h *ACLHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "rule deleted"})
 }
 
+// HandleEffective godoc
+// @Summary Get effective ACL rules
+// @Description Returns the effective ACL rules for a given user (including group memberships).
+// @Tags acls
+// @Security BearerAuth
+// @Produce json
+// @Param userID path string true "User ID"
+// @Success 200 {array} domain.ACLRule
+// @Failure 500 {object} Response
+// @Router /api/v1/acls/effective/{userID} [get]
 func (h *ACLHandler) HandleEffective(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "userID")
 	rules, err := h.store.GetEffectiveACLRules(r.Context(), userID)
@@ -226,6 +269,15 @@ func (h *ACLHandler) HandleEffective(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rules)
 }
 
+// HandleReload godoc
+// @Summary Reload ACL engine
+// @Description Forces a reload of the ACL policy engine from the database.
+// @Tags acls
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {object} Response{data=MessageResponse}
+// @Failure 500 {object} Response
+// @Router /api/v1/acls/reload [post]
 func (h *ACLHandler) HandleReload(w http.ResponseWriter, r *http.Request) {
 	if h.engine == nil {
 		writeJSON(w, http.StatusOK, map[string]string{"message": "no policy engine configured"})
