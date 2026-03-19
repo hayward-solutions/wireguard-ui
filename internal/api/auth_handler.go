@@ -349,10 +349,8 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Sync OIDC groups
-	if len(oidcUser.Groups) > 0 {
-		h.syncOIDCGroups(r.Context(), user.ID, oidcUser.Groups)
-	}
+	// Sync OIDC groups (always run — empty list clears stale memberships)
+	h.syncOIDCGroups(r.Context(), user.ID, oidcUser.Groups)
 
 	if err := h.store.UpdateLastLogin(r.Context(), user.ID); err != nil {
 		slog.Error("failed to update last login", "error", err)
