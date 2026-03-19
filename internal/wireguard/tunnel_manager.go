@@ -219,12 +219,19 @@ func (tm *TunnelManager) createManager(t *domain.Tunnel) (Manager, string, error
 	switch tm.mode {
 	case TunnelModeNetstack:
 		nm := NewNetstackManager()
-		nm.SetForwardAll(true) // tunnel interfaces forward all traffic to localhost
 		// Share the main device's UDP socket so tunnels work in environments
 		// like Fargate where only one UDP port is exposed.
 		if tm.mainNetstack != nil {
 			if sharedBind := tm.mainNetstack.NewSharedBind(); sharedBind != nil {
 				nm.SetSharedBind(sharedBind)
+			}
+			// Register the main server's VPN address as a local address on the
+			// tunnel forwarder so traffic to it gets rewritten to 127.0.0.1
+			// (the VPN IP only exists in the main gVisor stack, not on the host).
+			// Without this, only the tunnel's own address is treated as local,
+			// and traffic to the server's VPN IP would fail.
+			if mainAddr := tm.mainNetstack.LocalAddr(); mainAddr != "" {
+				nm.AddLocalAddr(mainAddr)
 			}
 		}
 		return nm, "", nil
