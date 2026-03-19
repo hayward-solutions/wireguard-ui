@@ -325,10 +325,11 @@ func (h *AuthHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"id":    claims.Subject,
-		"email": claims.Email,
-		"name":  claims.Name,
-		"role":  claims.Role,
+		"id":       claims.Subject,
+		"email":    claims.Email,
+		"username": claims.Email,
+		"name":     claims.Name,
+		"role":     claims.Role,
 	})
 }
 
@@ -413,10 +414,11 @@ func (h *AuthHandler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 	h.setCSRFCookie(w)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"id":    user.ID,
-		"email": user.Username,
-		"name":  user.Name,
-		"role":  user.Role,
+		"id":       user.ID,
+		"email":    user.Username,
+		"username": user.Username,
+		"name":     user.Name,
+		"role":     user.Role,
 	})
 }
 
