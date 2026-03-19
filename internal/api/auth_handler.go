@@ -237,6 +237,11 @@ func (h *AuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} Response{data=AuthInfoResponse}
 // @Router /auth/info [get]
 func (h *AuthHandler) HandleAuthInfo(w http.ResponseWriter, r *http.Request) {
+	// Seed a CSRF cookie for the login form if one isn't already present.
+	if c, err := r.Cookie(csrfCookieName); err != nil || c.Value == "" {
+		h.setCSRFCookie(w)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"oidc_enabled":              h.oidc != nil,
 		"local_enabled":             true,

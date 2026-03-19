@@ -116,18 +116,18 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		}
 		r.Get("/auth/info", authHandler.HandleAuthInfo)
 		r.Get("/auth/login", authHandler.HandleLoginPage)
-		r.Post("/auth/login", authHandler.HandleLocalLogin)
+		r.With(CSRFMiddleware).Post("/auth/login", authHandler.HandleLocalLogin)
 		r.Get("/auth/callback", authHandler.HandleCallback)
 		r.With(CSRFMiddleware).Post("/auth/logout", authHandler.HandleLogout)
 		r.With(CSRFMiddleware).Post("/auth/refresh", authHandler.HandleRefresh)
 
 		// MFA login challenge routes (unauthenticated, rate-limited)
 		if mfaHandler != nil {
-			r.Post("/auth/mfa/challenge", mfaHandler.HandleMFAVerifyTOTP)
-			r.Post("/auth/mfa/webauthn/begin", mfaHandler.HandleMFAWebAuthnBegin)
-			r.Post("/auth/mfa/webauthn/finish", mfaHandler.HandleMFAWebAuthnFinish)
-			r.Post("/auth/passkey/begin", mfaHandler.HandlePasskeyLoginBegin)
-			r.Post("/auth/passkey/finish", mfaHandler.HandlePasskeyLoginFinish)
+			r.With(CSRFMiddleware).Post("/auth/mfa/challenge", mfaHandler.HandleMFAVerifyTOTP)
+			r.With(CSRFMiddleware).Post("/auth/mfa/webauthn/begin", mfaHandler.HandleMFAWebAuthnBegin)
+			r.With(CSRFMiddleware).Post("/auth/mfa/webauthn/finish", mfaHandler.HandleMFAWebAuthnFinish)
+			r.With(CSRFMiddleware).Post("/auth/passkey/begin", mfaHandler.HandlePasskeyLoginBegin)
+			r.With(CSRFMiddleware).Post("/auth/passkey/finish", mfaHandler.HandlePasskeyLoginFinish)
 		}
 	})
 

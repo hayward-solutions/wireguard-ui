@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/hayward-solutions/wireguard-ui/internal/domain"
@@ -39,6 +41,85 @@ func TestAuthHandler_Info(t *testing.T) {
 	}
 	if resp.Data.WebAuthnEnabled {
 		t.Error("expected webauthn_enabled=false")
+	}
+}
+
+func TestAuthHandler_Info_SetsCSRFCookie(t *testing.T) {
+	store := newMockStore()
+	router := buildTestRouter(store)
+
+	req := httptest.NewRequest("GET", "/auth/info", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d", rr.Code, http.StatusOK)
+	}
+
+	var found bool
+	for _, c := range rr.Result().Cookies() {
+		if c.Name == "csrf_token" && c.Value != "" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected csrf_token cookie to be set on /auth/info when none present")
+	}
+}
+
+func TestAuthHandler_Info_PreservesExistingCSRFCookie(t *testing.T) {
+	store := newMockStore()
+	router := buildTestRouter(store)
+
+	req := httptest.NewRequest("GET", "/auth/info", nil)
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "existing-token"})
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d", rr.Code, http.StatusOK)
+	}
+
+	for _, c := range rr.Result().Cookies() {
+		if c.Name == "csrf_token" {
+			t.Error("expected no new csrf_token cookie when one already exists")
+		}
+	}
+}
+
+func TestAuthHandler_Login_RequiresCSRF(t *testing.T) {
+	store := newMockStore()
+	router := buildTestRouter(store)
+
+	// POST /auth/login without CSRF token should be rejected.
+	req := httptest.NewRequest("POST", "/auth/login", strings.NewReader(`{"username":"admin","password":"test"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without CSRF token, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAuthHandler_Login_CSRFPassesWithToken(t *testing.T) {
+	store := newMockStore()
+	router := buildTestRouter(store)
+
+	// POST /auth/login with matching CSRF cookie+header should pass CSRF check.
+	// The login itself will fail (bad credentials) but should NOT be 403 CSRF_FAILED.
+	csrfToken := "test-csrf-token-value"
+	req := httptest.NewRequest("POST", "/auth/login", strings.NewReader(`{"username":"nonexistent","password":"wrong"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-CSRF-Token", csrfToken)
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: csrfToken})
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	// Should get past CSRF (not 403 CSRF_FAILED). Expect 401 for bad credentials.
+	if rr.Code == http.StatusForbidden {
+		t.Fatalf("CSRF should have passed with matching token, got 403 (body: %s)", rr.Body.String())
 	}
 }
 
