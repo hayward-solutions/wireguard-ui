@@ -6,6 +6,7 @@ interface User {
 	name: string;
 	role: string;
 	username: string;
+	mfa_setup_required?: boolean;
 }
 
 export const user = writable<User | null>(null);

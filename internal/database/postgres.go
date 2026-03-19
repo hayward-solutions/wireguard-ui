@@ -1103,7 +1103,7 @@ func (s *PostgresStore) DeleteTunnel(ctx context.Context, id string) error {
 func (s *PostgresStore) ListWebAuthnCredentials(ctx context.Context, userID string) ([]domain.WebAuthnCredential, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, user_id, credential_id, public_key, attestation_type, aaguid,
-		       sign_count, transports, name, created_at, last_used_at
+		       sign_count, backup_eligible, backup_state, transports, name, created_at, last_used_at
 		FROM user_webauthn_credentials WHERE user_id = $1 ORDER BY created_at`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list webauthn credentials: %w", err)
@@ -1115,7 +1115,7 @@ func (s *PostgresStore) ListWebAuthnCredentials(ctx context.Context, userID stri
 		var c domain.WebAuthnCredential
 		var transportsJSON []byte
 		if err := rows.Scan(&c.ID, &c.UserID, &c.CredentialID, &c.PublicKey, &c.AttestationType,
-			&c.AAGUID, &c.SignCount, &transportsJSON, &c.Name, &c.CreatedAt, &c.LastUsedAt); err != nil {
+			&c.AAGUID, &c.SignCount, &c.BackupEligible, &c.BackupState, &transportsJSON, &c.Name, &c.CreatedAt, &c.LastUsedAt); err != nil {
 			return nil, fmt.Errorf("scan webauthn credential: %w", err)
 		}
 		_ = json.Unmarshal(transportsJSON, &c.Transports)
@@ -1127,13 +1127,13 @@ func (s *PostgresStore) ListWebAuthnCredentials(ctx context.Context, userID stri
 func (s *PostgresStore) GetWebAuthnCredentialByCredentialID(ctx context.Context, credentialID string) (*domain.WebAuthnCredential, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, user_id, credential_id, public_key, attestation_type, aaguid,
-		       sign_count, transports, name, created_at, last_used_at
+		       sign_count, backup_eligible, backup_state, transports, name, created_at, last_used_at
 		FROM user_webauthn_credentials WHERE credential_id = $1`, credentialID)
 
 	var c domain.WebAuthnCredential
 	var transportsJSON []byte
 	err := row.Scan(&c.ID, &c.UserID, &c.CredentialID, &c.PublicKey, &c.AttestationType,
-		&c.AAGUID, &c.SignCount, &transportsJSON, &c.Name, &c.CreatedAt, &c.LastUsedAt)
+		&c.AAGUID, &c.SignCount, &c.BackupEligible, &c.BackupState, &transportsJSON, &c.Name, &c.CreatedAt, &c.LastUsedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -1147,10 +1147,10 @@ func (s *PostgresStore) GetWebAuthnCredentialByCredentialID(ctx context.Context,
 func (s *PostgresStore) CreateWebAuthnCredential(ctx context.Context, cred *domain.WebAuthnCredential) error {
 	transportsJSON, _ := json.Marshal(cred.Transports)
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO user_webauthn_credentials (id, user_id, credential_id, public_key, attestation_type, aaguid, sign_count, transports, name, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		INSERT INTO user_webauthn_credentials (id, user_id, credential_id, public_key, attestation_type, aaguid, sign_count, backup_eligible, backup_state, transports, name, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
 		cred.ID, cred.UserID, cred.CredentialID, cred.PublicKey, cred.AttestationType,
-		cred.AAGUID, cred.SignCount, transportsJSON, cred.Name, cred.CreatedAt)
+		cred.AAGUID, cred.SignCount, cred.BackupEligible, cred.BackupState, transportsJSON, cred.Name, cred.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("create webauthn credential: %w", err)
 	}

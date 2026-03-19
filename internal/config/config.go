@@ -68,8 +68,10 @@ type Config struct {
 	APITokenMaxLifetime time.Duration
 
 	// Security
-	RequireHTTPS       bool
-	AllowCustomScripts bool
+	RequireHTTPS           bool
+	AllowCustomScripts     bool
+	AllowPasswordlessLogin bool
+	MFARequired            bool
 	CORSOrigins        []string
 	TrustedProxies     []string
 
@@ -124,6 +126,8 @@ func Load() (*Config, error) {
 
 	cfg.RequireHTTPS = envOrDefault("REQUIRE_HTTPS", "false") == "true"
 	cfg.AllowCustomScripts = envOrDefault("ALLOW_CUSTOM_SCRIPTS", "false") == "true"
+	cfg.AllowPasswordlessLogin = envOrDefault("ALLOW_PASSWORDLESS_LOGIN", "true") == "true"
+	cfg.MFARequired = envOrDefault("MFA_REQUIRED", "false") == "true"
 	cfg.WGUserspaceMode = envOrDefault("WG_USERSPACE_MODE", "true") == "true"
 	cfg.WGNetstackMode = envOrDefault("WG_NETSTACK_MODE", "false") == "true"
 	cfg.WGMockMode = envOrDefault("WG_MOCK_MODE", "false") == "true"

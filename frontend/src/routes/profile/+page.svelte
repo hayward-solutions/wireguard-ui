@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api, type APIToken, type APITokenCreateResponse, type MFAStatus, type WebAuthnCredentialInfo } from '$lib/api';
-	import { user } from '$lib/stores/auth';
+	import { user, checkAuth } from '$lib/stores/auth';
+	import { goto } from '$app/navigation';
 	import { Plus, Trash2, Copy, Check, X, Eye, EyeOff, KeyRound, Shield, Smartphone } from 'lucide-svelte';
 	import { get } from 'svelte/store';
 	import { startRegistration } from '@simplewebauthn/browser';
@@ -99,6 +100,14 @@
 		}
 	}
 
+	async function checkMFASetupComplete() {
+		await checkAuth();
+		const u = get(user);
+		if (u && !u.mfa_setup_required) {
+			goto('/');
+		}
+	}
+
 	async function handleWebAuthnRegister() {
 		mfaError = '';
 		mfaSuccess = '';
@@ -112,6 +121,7 @@
 			showWebAuthnNameModal = false;
 			webauthnName = '';
 			await loadMFAStatus();
+			await checkMFASetupComplete();
 		} catch (e: any) {
 			if (e.name === 'NotAllowedError') {
 				mfaError = 'Registration was cancelled or timed out';
@@ -162,6 +172,7 @@
 			totpCode = '';
 			totpSecret = '';
 			await loadMFAStatus();
+			await checkMFASetupComplete();
 		} catch (e: any) {
 			mfaError = e.message;
 		} finally {
@@ -236,6 +247,12 @@
 		<h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Profile</h1>
 		<p class="mt-1 text-zinc-500 dark:text-zinc-400">Manage your account settings</p>
 	</div>
+
+	{#if profile?.mfa_setup_required}
+		<div class="rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-950">
+			<p class="text-sm font-medium text-amber-800 dark:text-amber-200">Your administrator requires multi-factor authentication. Please set up a security key or authenticator app below to continue.</p>
+		</div>
+	{/if}
 
 	<div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
 		<h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Account Information</h2>

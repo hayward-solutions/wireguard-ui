@@ -160,6 +160,10 @@ func (u *WebAuthnUser) WebAuthnCredentials() []webauthn.Credential {
 				SignCount: c.SignCount,
 			},
 			Transport: transports,
+			Flags: webauthn.CredentialFlags{
+				BackupEligible: c.BackupEligible,
+				BackupState:    c.BackupState,
+			},
 		})
 	}
 	return creds
@@ -188,6 +192,8 @@ func CredentialToDomain(userID string, cred *webauthn.Credential, name string) *
 		AttestationType: cred.AttestationType,
 		AAGUID:          aaguid,
 		SignCount:       cred.Authenticator.SignCount,
+		BackupEligible:  cred.Flags.BackupEligible,
+		BackupState:     cred.Flags.BackupState,
 		Transports:      transports,
 		Name:            name,
 		CreatedAt:       time.Now(),

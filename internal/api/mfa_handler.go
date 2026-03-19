@@ -18,31 +18,34 @@ import (
 
 // MFAHandler handles MFA enrollment, management, and login challenge endpoints.
 type MFAHandler struct {
-	store         database.Store
-	webauthn      *auth.WebAuthnProvider
-	totp          *auth.TOTPProvider
-	jwt           *auth.JWTManager
-	secureCookie  bool
-	sessionExpiry time.Duration
+	store                  database.Store
+	webauthn               *auth.WebAuthnProvider
+	totp                   *auth.TOTPProvider
+	jwt                    *auth.JWTManager
+	secureCookie           bool
+	sessionExpiry          time.Duration
+	allowPasswordlessLogin bool
 }
 
 type MFAHandlerConfig struct {
-	Store         database.Store
-	WebAuthn      *auth.WebAuthnProvider
-	TOTP          *auth.TOTPProvider
-	JWT           *auth.JWTManager
-	SecureCookie  bool
-	SessionExpiry time.Duration
+	Store                  database.Store
+	WebAuthn               *auth.WebAuthnProvider
+	TOTP                   *auth.TOTPProvider
+	JWT                    *auth.JWTManager
+	SecureCookie           bool
+	SessionExpiry          time.Duration
+	AllowPasswordlessLogin bool
 }
 
 func NewMFAHandler(cfg MFAHandlerConfig) *MFAHandler {
 	return &MFAHandler{
-		store:         cfg.Store,
-		webauthn:      cfg.WebAuthn,
-		totp:          cfg.TOTP,
-		jwt:           cfg.JWT,
-		secureCookie:  cfg.SecureCookie,
-		sessionExpiry: cfg.SessionExpiry,
+		store:                  cfg.Store,
+		webauthn:               cfg.WebAuthn,
+		totp:                   cfg.TOTP,
+		jwt:                    cfg.JWT,
+		secureCookie:           cfg.SecureCookie,
+		sessionExpiry:          cfg.SessionExpiry,
+		allowPasswordlessLogin: cfg.AllowPasswordlessLogin,
 	}
 }
 
@@ -144,7 +147,7 @@ func (h *MFAHandler) HandleWebAuthnRegisterBegin(w http.ResponseWriter, r *http.
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"challenge_id": challengeID,
-		"options":      options,
+		"options":      options.Response,
 	})
 }
 
@@ -537,7 +540,7 @@ func (h *MFAHandler) HandleMFAWebAuthnBegin(w http.ResponseWriter, r *http.Reque
 	h.webauthn.StoreSession(req.MFAToken, sessionData)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"options": options,
+		"options": options.Response,
 	})
 }
 
@@ -620,6 +623,11 @@ func (h *MFAHandler) HandleMFAWebAuthnFinish(w http.ResponseWriter, r *http.Requ
 // @Failure 500 {object} Response
 // @Router /auth/passkey/begin [post]
 func (h *MFAHandler) HandlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request) {
+	if !h.allowPasswordlessLogin {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "passwordless login is disabled")
+		return
+	}
+
 	options, sessionData, err := h.webauthn.BeginDiscoverableLogin()
 	if err != nil {
 		slog.Error("webauthn begin discoverable login", "error", err)
@@ -632,7 +640,7 @@ func (h *MFAHandler) HandlePasskeyLoginBegin(w http.ResponseWriter, r *http.Requ
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"challenge_id": challengeID,
-		"options":      options,
+		"options":      options.Response,
 	})
 }
 

@@ -30,10 +30,12 @@ type RouterConfig struct {
 	Monitor      *monitor.Monitor
 	PolicyEngine *acl.PolicyEngine
 	FrontendFS   fs.FS
-	AuthRateLimiter    *auth.RateLimiter
-	LoginRateLimiter   *auth.RateLimiter
-	PasswordRateLimiter *auth.RateLimiter
-	SessionExpiry      time.Duration
+	AuthRateLimiter        *auth.RateLimiter
+	LoginRateLimiter       *auth.RateLimiter
+	PasswordRateLimiter    *auth.RateLimiter
+	SessionExpiry          time.Duration
+	AllowPasswordlessLogin bool
+	MFARequired            bool
 	DevMode            bool
 	AdminAPIKey         string
 	APITokenMaxLifetime time.Duration
@@ -77,18 +79,21 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 		SecureCookie:    cfg.RequireHTTPS,
 		PolicyEngine:    cfg.PolicyEngine,
 		SessionExpiry:   cfg.SessionExpiry,
-		WebAuthnEnabled: cfg.WebAuthn != nil,
+		WebAuthnEnabled:        cfg.WebAuthn != nil,
+		AllowPasswordlessLogin: cfg.AllowPasswordlessLogin,
+		MFARequired:            cfg.MFARequired,
 	})
 
 	var mfaHandler *MFAHandler
 	if cfg.WebAuthn != nil && cfg.TOTP != nil {
 		mfaHandler = NewMFAHandler(MFAHandlerConfig{
-			Store:         cfg.Store,
-			WebAuthn:      cfg.WebAuthn,
-			TOTP:          cfg.TOTP,
-			JWT:           cfg.JWTManager,
-			SecureCookie:  cfg.RequireHTTPS,
-			SessionExpiry: cfg.SessionExpiry,
+			Store:                  cfg.Store,
+			WebAuthn:               cfg.WebAuthn,
+			TOTP:                   cfg.TOTP,
+			JWT:                    cfg.JWTManager,
+			SecureCookie:           cfg.RequireHTTPS,
+			SessionExpiry:          cfg.SessionExpiry,
+			AllowPasswordlessLogin: cfg.AllowPasswordlessLogin,
 		})
 	}
 
