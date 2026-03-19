@@ -275,6 +275,10 @@ func run() error {
 		}
 	}
 
+	// Start periodic DNS re-resolution for tunnel endpoints.
+	// Handles ECS Fargate restarts where tasks get new IPs.
+	tunnelMgr.StartDNSRefresh(30*time.Second, ctx.Done())
+
 	// Reload ACL policies now that listeners are registered and peers are synced.
 	// The initial Reload() above ran before listeners were registered.
 	if err := policyEngine.Reload(ctx, store); err != nil {
