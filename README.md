@@ -108,6 +108,41 @@ All configuration is via environment variables.
 | `OIDC_REDIRECT_URL` | OIDC callback URL | `{BASE_URL}/auth/callback` |
 | `OIDC_SCOPES` | OIDC scopes to request | `openid,profile,email` |
 | `OIDC_ADMIN_GROUP` | OIDC group claim whose members are granted admin role | — |
+| `OIDC_GROUPS_CLAIM` | OIDC token claim used to extract group memberships | `cognito:groups` |
+
+#### Authentication Policies
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ALLOW_PASSWORDLESS_LOGIN` | Allow users to sign in with WebAuthn/passkey without a password | `true` |
+| `MFA_REQUIRED` | Require multi-factor authentication for all users | `false` |
+
+### Tunnels
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `TUNNEL_PEERS` | JSON array of tunnel peer configurations for first-boot provisioning | — |
+| `TUNNEL_SUBNET` | CIDR range used to auto-allocate /30 addresses for inter-server tunnels | `10.100.0.0/16` |
+
+<details>
+<summary>Example TUNNEL_PEERS JSON</summary>
+
+```json
+[
+  {
+    "public_key": "aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789+Ab=",
+    "endpoint": "peer1.example.com:51820",
+    "allowed_ips": ["10.100.0.0/30"]
+  },
+  {
+    "public_key": "zYxWvUtSrQpOnMlKjIhGfEdCbA9876543210/Zy=",
+    "endpoint": "peer2.example.com:51820",
+    "allowed_ips": ["10.100.0.4/30"]
+  }
+]
+```
+
+</details>
 
 ### Security
 
@@ -125,6 +160,7 @@ All configuration is via environment variables.
 | `JWT_EXPIRY` | JWT token lifetime | `15m` |
 | `SESSION_EXPIRY` | Browser session lifetime | `168h` |
 | `STATS_INTERVAL` | How often to poll WireGuard stats | `10s` |
+| `API_TOKEN_MAX_LIFETIME` | Maximum lifetime for user-generated API tokens | `2160h` (90 days) |
 | `DEV_MODE` | Enable development features | `false` |
 
 ## Docker Compose

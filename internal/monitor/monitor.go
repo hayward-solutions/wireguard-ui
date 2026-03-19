@@ -48,16 +48,18 @@ func (m *Monitor) run() {
 }
 
 func (m *Monitor) collect() {
-	stats, err := m.wg.GetStats()
+	raw, err := m.wg.GetStats()
 	if err != nil {
 		slog.Error("collect stats", "error", err)
 		return
 	}
 
-	// Mark peers as connected if last handshake was within 3 minutes
+	// Build a new slice so we never mutate a slice that readers may be copying.
 	cutoff := time.Now().Add(-3 * time.Minute)
-	for i := range stats {
-		stats[i].Connected = !stats[i].LastHandshake.IsZero() && stats[i].LastHandshake.After(cutoff)
+	stats := make([]domain.PeerStats, len(raw))
+	for i, s := range raw {
+		s.Connected = !s.LastHandshake.IsZero() && s.LastHandshake.After(cutoff)
+		stats[i] = s
 	}
 
 	m.mu.Lock()
