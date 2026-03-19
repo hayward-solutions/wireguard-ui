@@ -19,3 +19,7 @@ export function formatTimeAgo(dateStr: string): string {
 	if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
 	return `${Math.floor(diffSec / 86400)}d ago`;
 }
+
+export function formatRate(bytesPerSec: number): string {
+	return formatBytes(bytesPerSec) + '/s';
+}

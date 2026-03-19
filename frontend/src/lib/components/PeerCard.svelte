@@ -34,7 +34,7 @@
 				title={connected ? 'Connected' : 'Disconnected'}
 			></div>
 			<div>
-				<h3 class="font-semibold text-zinc-900 dark:text-zinc-100">{peer.name}</h3>
+				<a href="/peers/{peer.id}" class="font-semibold text-zinc-900 hover:underline dark:text-zinc-100">{peer.name}</a>
 				{#if $user?.role === 'admin' && peer.created_by_name}
 					<p class="text-xs text-zinc-400 dark:text-zinc-500">{peer.created_by_name}</p>
 				{/if}
