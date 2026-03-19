@@ -24,7 +24,7 @@
 			const res = await fetch('/auth/info');
 			authInfo = await res.json().then((r) => r.data);
 		} catch {
-			authInfo = { oidc_enabled: false, local_enabled: true, webauthn_enabled: false };
+			authInfo = { oidc_enabled: false, local_enabled: true, webauthn_enabled: false, passwordless_login_enabled: false };
 		}
 	});
 
