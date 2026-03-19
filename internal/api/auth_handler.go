@@ -55,7 +55,14 @@ func NewAuthHandler(cfg AuthHandlerConfig) *AuthHandler {
 	}
 }
 
-// HandleLoginPage redirects to OIDC or returns auth method info for the UI.
+// HandleLoginPage godoc
+// @Summary Login page / OIDC redirect
+// @Description Redirects to OIDC provider if configured, otherwise returns an error indicating local login should be used.
+// @Tags auth
+// @Produce json
+// @Success 302 {string} string "Redirect to OIDC provider"
+// @Failure 400 {object} Response
+// @Router /auth/login [get]
 func (h *AuthHandler) HandleLoginPage(w http.ResponseWriter, r *http.Request) {
 	if h.oidc != nil {
 		// OIDC redirect flow
@@ -83,12 +90,21 @@ func (h *AuthHandler) HandleLoginPage(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusBadRequest, "NO_OIDC", "use POST /auth/login with username and password")
 }
 
-// HandleLocalLogin handles username/password authentication against DB users.
+// HandleLocalLogin godoc
+// @Summary Local login
+// @Description Authenticates a user with username and password. Returns user info or an MFA challenge if MFA is enabled.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param body body LoginRequest true "Login credentials"
+// @Success 200 {object} Response{data=LoginResponse} "Successful login"
+// @Success 200 {object} Response{data=MFARequiredResponse} "MFA required"
+// @Failure 400 {object} Response
+// @Failure 401 {object} Response
+// @Failure 429 {object} Response
+// @Router /auth/login [post]
 func (h *AuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
+	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -177,7 +193,13 @@ func (h *AuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleAuthInfo returns what auth methods are available.
+// HandleAuthInfo godoc
+// @Summary Get auth info
+// @Description Returns available authentication methods.
+// @Tags auth
+// @Produce json
+// @Success 200 {object} Response{data=AuthInfoResponse}
+// @Router /auth/info [get]
 func (h *AuthHandler) HandleAuthInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"oidc_enabled":     h.oidc != nil,
@@ -186,6 +208,16 @@ func (h *AuthHandler) HandleAuthInfo(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleCallback godoc
+// @Summary OIDC callback
+// @Description Handles the OIDC provider callback after authentication.
+// @Tags auth
+// @Param state query string true "OAuth state parameter"
+// @Param code query string true "Authorization code"
+// @Success 302 {string} string "Redirect to home"
+// @Failure 400 {object} Response
+// @Failure 401 {object} Response
+// @Router /auth/callback [get]
 func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	if h.oidc == nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "OIDC not configured")
@@ -280,6 +312,14 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
+// HandleLogout godoc
+// @Summary Logout
+// @Description Revokes the session and clears authentication cookies.
+// @Tags auth
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {object} Response{data=MessageResponse}
+// @Router /auth/logout [post]
 func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	actor := actorFromRequest(r)
 	slog.Warn("audit", "action", "logout", "actor", actor)
@@ -318,6 +358,15 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
 }
 
+// HandleMe godoc
+// @Summary Get current user
+// @Description Returns information about the currently authenticated user.
+// @Tags auth
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {object} Response{data=UserInfoResponse}
+// @Failure 401 {object} Response
+// @Router /auth/me [get]
 func (h *AuthHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromContext(r.Context())
 	if claims == nil {
@@ -366,7 +415,14 @@ func (h *AuthHandler) syncOIDCGroups(ctx context.Context, userID string, oidcGro
 	}
 }
 
-// HandleRefresh issues a new short-lived JWT from a valid session cookie.
+// HandleRefresh godoc
+// @Summary Refresh token
+// @Description Issues a new short-lived JWT from a valid session cookie.
+// @Tags auth
+// @Produce json
+// @Success 200 {object} Response{data=UserInfoResponse}
+// @Failure 401 {object} Response
+// @Router /auth/refresh [post]
 func (h *AuthHandler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 	sessionCookie, err := r.Cookie("session")
 	if err != nil || sessionCookie.Value == "" {

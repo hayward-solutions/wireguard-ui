@@ -24,6 +24,15 @@ func NewServerHandler(store database.Store, wg wireguard.Manager, allowCustomScr
 	return &ServerHandler{store: store, wg: wg, allowCustomScripts: allowCustomScripts}
 }
 
+// HandleGet godoc
+// @Summary Get server config
+// @Description Returns the WireGuard server configuration. Non-admin users get redacted output.
+// @Tags server
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {object} ServerConfigResponse
+// @Failure 404 {object} Response
+// @Router /api/v1/server [get]
 func (h *ServerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	cfg, err := h.store.GetServerConfig(r.Context())
 	if err != nil {
@@ -45,30 +54,26 @@ func (h *ServerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Include custom_scripts_allowed so the frontend knows the state
-	type serverConfigResponse struct {
-		*domain.ServerConfig
-		CustomScriptsAllowed bool `json:"custom_scripts_allowed"`
-	}
-	writeJSON(w, http.StatusOK, serverConfigResponse{
+	writeJSON(w, http.StatusOK, ServerConfigResponse{
 		ServerConfig:         cfg,
 		CustomScriptsAllowed: h.allowCustomScripts,
 	})
 }
 
+// HandleUpdate godoc
+// @Summary Update server config
+// @Description Updates the WireGuard server configuration. Requires admin role.
+// @Tags server
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param body body UpdateServerRequest true "Server configuration"
+// @Success 200 {object} domain.ServerConfig
+// @Failure 400 {object} Response
+// @Failure 403 {object} Response
+// @Router /api/v1/server [put]
 func (h *ServerHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
-	var update struct {
-		ListenPort        int                    `json:"listen_port"`
-		Address           string                 `json:"address"`
-		DNS               string                 `json:"dns"`
-		MTU               int                    `json:"mtu"`
-		FirewallConfig    *domain.FirewallConfig  `json:"firewall_config,omitempty"`
-		PostUp            string                 `json:"post_up"`
-		PostDown          string                 `json:"post_down"`
-		Endpoint          string                 `json:"endpoint"`
-		DefaultAllowedIPs *string                `json:"default_allowed_ips"`
-		DefaultDNS        *string                `json:"default_dns"`
-		TunnelSubnet      *string                `json:"tunnel_subnet"`
-	}
+	var update UpdateServerRequest
 	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -158,6 +163,15 @@ func (h *ServerHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, cfg)
 }
 
+// HandleApply godoc
+// @Summary Apply server config
+// @Description Applies the current server configuration to the WireGuard interface.
+// @Tags server
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {object} Response{data=MessageResponse}
+// @Failure 500 {object} Response
+// @Router /api/v1/server/apply [post]
 func (h *ServerHandler) HandleApply(w http.ResponseWriter, r *http.Request) {
 	cfg, err := h.store.GetServerConfig(r.Context())
 	if err != nil || cfg == nil {

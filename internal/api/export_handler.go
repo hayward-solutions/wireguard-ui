@@ -17,6 +17,19 @@ func NewExportHandler(store database.Store) *ExportHandler {
 	return &ExportHandler{store: store}
 }
 
+// HandleConfig godoc
+// @Summary Export peer config
+// @Description Returns the WireGuard configuration file for a peer.
+// @Tags peers
+// @Produce text/plain
+// @Security BearerAuth
+// @Param id path string true "Peer ID"
+// @Success 200 {string} string "WireGuard configuration file"
+// @Failure 400 {object} Response{error=APIError}
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 404 {object} Response{error=APIError}
+// @Failure 500 {object} Response{error=APIError}
+// @Router /api/v1/peers/{id}/config [get]
 func (h *ExportHandler) HandleConfig(w http.ResponseWriter, r *http.Request) {
 	peer, _ := requirePeerAccess(h.store, w, r)
 	if peer == nil {
@@ -49,6 +62,19 @@ func (h *ExportHandler) HandleConfig(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(conf))
 }
 
+// HandleQRCode godoc
+// @Summary Export peer QR code
+// @Description Returns a QR code image of the peer's WireGuard configuration.
+// @Tags peers
+// @Produce image/png
+// @Security BearerAuth
+// @Param id path string true "Peer ID"
+// @Success 200 {file} binary "QR code PNG image"
+// @Failure 400 {object} Response{error=APIError}
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 404 {object} Response{error=APIError}
+// @Failure 500 {object} Response{error=APIError}
+// @Router /api/v1/peers/{id}/qrcode [get]
 func (h *ExportHandler) HandleQRCode(w http.ResponseWriter, r *http.Request) {
 	peer, _ := requirePeerAccess(h.store, w, r)
 	if peer == nil {

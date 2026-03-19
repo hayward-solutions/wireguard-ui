@@ -48,7 +48,15 @@ func NewMFAHandler(cfg MFAHandlerConfig) *MFAHandler {
 
 // --- Authenticated: MFA Status & Management ---
 
-// HandleMFAStatus returns the user's MFA status and enrolled credentials.
+// HandleMFAStatus godoc
+// @Summary Get MFA status
+// @Description Returns the user's MFA enrollment status and registered credentials.
+// @Tags mfa
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {object} Response{data=MFAStatusResponse}
+// @Failure 401 {object} Response
+// @Router /api/v1/me/mfa [get]
 func (h *MFAHandler) HandleMFAStatus(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromContext(r.Context())
 	if claims == nil {
@@ -76,16 +84,9 @@ func (h *MFAHandler) HandleMFAStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type credInfo struct {
-		ID         string     `json:"id"`
-		Name       string     `json:"name"`
-		CreatedAt  time.Time  `json:"created_at"`
-		LastUsedAt *time.Time `json:"last_used_at,omitempty"`
-	}
-
-	credList := make([]credInfo, 0, len(creds))
+	credList := make([]MFACredentialInfo, 0, len(creds))
 	for _, c := range creds {
-		credList = append(credList, credInfo{
+		credList = append(credList, MFACredentialInfo{
 			ID:         c.ID,
 			Name:       c.Name,
 			CreatedAt:  c.CreatedAt,
@@ -102,6 +103,15 @@ func (h *MFAHandler) HandleMFAStatus(w http.ResponseWriter, r *http.Request) {
 
 // --- Authenticated: WebAuthn Registration ---
 
+// HandleWebAuthnRegisterBegin godoc
+// @Summary Begin WebAuthn registration
+// @Description Starts WebAuthn credential registration for the authenticated user.
+// @Tags mfa
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {object} Response{data=WebAuthnRegisterBeginResponse}
+// @Failure 401 {object} Response
+// @Router /api/v1/me/mfa/webauthn/register/begin [post]
 func (h *MFAHandler) HandleWebAuthnRegisterBegin(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromContext(r.Context())
 	if claims == nil {
@@ -138,6 +148,17 @@ func (h *MFAHandler) HandleWebAuthnRegisterBegin(w http.ResponseWriter, r *http.
 	})
 }
 
+// HandleWebAuthnRegisterFinish godoc
+// @Summary Finish WebAuthn registration
+// @Description Completes WebAuthn credential registration.
+// @Tags mfa
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Success 201 {object} Response{data=WebAuthnCreatedResponse}
+// @Failure 400 {object} Response
+// @Failure 401 {object} Response
+// @Router /api/v1/me/mfa/webauthn/register/finish [post]
 func (h *MFAHandler) HandleWebAuthnRegisterFinish(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromContext(r.Context())
 	if claims == nil {
@@ -246,6 +267,17 @@ func (h *MFAHandler) finishWebAuthnRegistration(w http.ResponseWriter, r *http.R
 	})
 }
 
+// HandleWebAuthnDelete godoc
+// @Summary Delete WebAuthn credential
+// @Description Deletes a WebAuthn credential by ID.
+// @Tags mfa
+// @Security BearerAuth
+// @Produce json
+// @Param id path string true "Credential ID"
+// @Success 200 {object} Response{data=MessageResponse}
+// @Failure 401 {object} Response
+// @Failure 404 {object} Response
+// @Router /api/v1/me/mfa/webauthn/{id} [delete]
 func (h *MFAHandler) HandleWebAuthnDelete(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromContext(r.Context())
 	if claims == nil {
@@ -288,6 +320,15 @@ func (h *MFAHandler) HandleWebAuthnDelete(w http.ResponseWriter, r *http.Request
 
 // --- Authenticated: TOTP Enrollment ---
 
+// HandleTOTPEnroll godoc
+// @Summary Enroll TOTP
+// @Description Generates a new TOTP secret for the authenticated user.
+// @Tags mfa
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {object} Response{data=TOTPEnrollResponse}
+// @Failure 401 {object} Response
+// @Router /api/v1/me/mfa/totp/enroll [post]
 func (h *MFAHandler) HandleTOTPEnroll(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromContext(r.Context())
 	if claims == nil {
@@ -321,6 +362,18 @@ func (h *MFAHandler) HandleTOTPEnroll(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleTOTPVerify godoc
+// @Summary Verify TOTP enrollment
+// @Description Verifies a TOTP code to complete enrollment.
+// @Tags mfa
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param body body TOTPVerifyRequest true "TOTP code"
+// @Success 200 {object} Response{data=MessageResponse}
+// @Failure 400 {object} Response
+// @Failure 401 {object} Response
+// @Router /api/v1/me/mfa/totp/verify [post]
 func (h *MFAHandler) HandleTOTPVerify(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromContext(r.Context())
 	if claims == nil {
@@ -328,9 +381,7 @@ func (h *MFAHandler) HandleTOTPVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Code string `json:"code"`
-	}
+	var req TOTPVerifyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -364,6 +415,15 @@ func (h *MFAHandler) HandleTOTPVerify(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "TOTP verified and enabled"})
 }
 
+// HandleTOTPDelete godoc
+// @Summary Delete TOTP enrollment
+// @Description Removes TOTP enrollment for the authenticated user.
+// @Tags mfa
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {object} Response{data=MessageResponse}
+// @Failure 401 {object} Response
+// @Router /api/v1/me/mfa/totp [delete]
 func (h *MFAHandler) HandleTOTPDelete(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromContext(r.Context())
 	if claims == nil {
@@ -384,12 +444,19 @@ func (h *MFAHandler) HandleTOTPDelete(w http.ResponseWriter, r *http.Request) {
 
 // --- Unauthenticated: MFA Login Challenge ---
 
-// HandleMFAVerifyTOTP verifies a TOTP code during the MFA login step.
+// HandleMFAVerifyTOTP godoc
+// @Summary MFA TOTP challenge
+// @Description Verifies a TOTP code during the MFA login step.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param body body MFAChallengeRequest true "MFA token and TOTP code"
+// @Success 200 {object} Response{data=LoginResponse}
+// @Failure 400 {object} Response
+// @Failure 401 {object} Response
+// @Router /auth/mfa/challenge [post]
 func (h *MFAHandler) HandleMFAVerifyTOTP(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		MFAToken string `json:"mfa_token"`
-		Code     string `json:"code"`
-	}
+	var req MFAChallengeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -429,11 +496,19 @@ func (h *MFAHandler) HandleMFAVerifyTOTP(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// HandleMFAWebAuthnBegin starts a WebAuthn assertion for MFA login.
+// HandleMFAWebAuthnBegin godoc
+// @Summary MFA WebAuthn begin
+// @Description Starts a WebAuthn assertion for MFA login.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param body body MFATokenRequest true "MFA token"
+// @Success 200 {object} Response{data=WebAuthnOptionsResponse}
+// @Failure 400 {object} Response
+// @Failure 401 {object} Response
+// @Router /auth/mfa/webauthn/begin [post]
 func (h *MFAHandler) HandleMFAWebAuthnBegin(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		MFAToken string `json:"mfa_token"`
-	}
+	var req MFATokenRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -466,12 +541,18 @@ func (h *MFAHandler) HandleMFAWebAuthnBegin(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-// HandleMFAWebAuthnFinish completes a WebAuthn assertion for MFA login.
+// HandleMFAWebAuthnFinish godoc
+// @Summary MFA WebAuthn finish
+// @Description Completes a WebAuthn assertion for MFA login.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Success 200 {object} Response{data=LoginResponse}
+// @Failure 400 {object} Response
+// @Failure 401 {object} Response
+// @Router /auth/mfa/webauthn/finish [post]
 func (h *MFAHandler) HandleMFAWebAuthnFinish(w http.ResponseWriter, r *http.Request) {
-	var wrapper struct {
-		MFAToken string          `json:"mfa_token"`
-		Response json.RawMessage `json:"response"`
-	}
+	var wrapper MFAWebAuthnFinishRequest
 	if err := json.NewDecoder(r.Body).Decode(&wrapper); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -530,6 +611,14 @@ func (h *MFAHandler) HandleMFAWebAuthnFinish(w http.ResponseWriter, r *http.Requ
 
 // --- Unauthenticated: Passwordless WebAuthn Login ---
 
+// HandlePasskeyLoginBegin godoc
+// @Summary Passkey login begin
+// @Description Starts a passwordless WebAuthn (passkey) login flow.
+// @Tags auth
+// @Produce json
+// @Success 200 {object} Response{data=PasskeyLoginBeginResponse}
+// @Failure 500 {object} Response
+// @Router /auth/passkey/begin [post]
 func (h *MFAHandler) HandlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request) {
 	options, sessionData, err := h.webauthn.BeginDiscoverableLogin()
 	if err != nil {
@@ -547,11 +636,18 @@ func (h *MFAHandler) HandlePasskeyLoginBegin(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// HandlePasskeyLoginFinish godoc
+// @Summary Passkey login finish
+// @Description Completes a passwordless WebAuthn (passkey) login flow.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Success 200 {object} Response{data=LoginResponse}
+// @Failure 400 {object} Response
+// @Failure 401 {object} Response
+// @Router /auth/passkey/finish [post]
 func (h *MFAHandler) HandlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request) {
-	var wrapper struct {
-		ChallengeID string          `json:"challenge_id"`
-		Response    json.RawMessage `json:"response"`
-	}
+	var wrapper PasskeyLoginFinishRequest
 	if err := json.NewDecoder(r.Body).Decode(&wrapper); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
