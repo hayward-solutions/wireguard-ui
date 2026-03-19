@@ -1,5 +1,6 @@
 # Go
 bin/
+docs/
 *.exe
 *.exe~
 *.dll

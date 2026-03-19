@@ -23,6 +23,16 @@ func NewPeerHandler(store database.Store, wg wireguard.Manager, engine *acl.Poli
 	return &PeerHandler{store: store, wg: wg, engine: engine}
 }
 
+// HandleList godoc
+// @Summary List peers
+// @Description Returns all peers. Admins see all peers; non-admins see only their own.
+// @Tags peers
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} Response{data=[]domain.Peer}
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 500 {object} Response{error=APIError}
+// @Router /api/v1/peers [get]
 func (h *PeerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromContext(r.Context())
 	if claims == nil {
@@ -80,6 +90,17 @@ func (h *PeerHandler) resolveOwnerNames(r *http.Request, peers []domain.Peer) {
 	}
 }
 
+// HandleGet godoc
+// @Summary Get peer
+// @Description Returns a single peer by ID. Ownership enforced for non-admins.
+// @Tags peers
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Peer ID"
+// @Success 200 {object} Response{data=domain.Peer}
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 404 {object} Response{error=APIError}
+// @Router /api/v1/peers/{id} [get]
 func (h *PeerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	peer, _ := requirePeerAccess(h.store, w, r)
 	if peer == nil {
@@ -88,21 +109,22 @@ func (h *PeerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, peer)
 }
 
-// createPeerResponse wraps domain.Peer to include the preshared key in the
-// creation response. This is a one-time disclosure (like API token creation).
-type createPeerResponse struct {
-	*domain.Peer
-	PresharedKey string `json:"preshared_key,omitempty"`
-}
-
+// HandleCreate godoc
+// @Summary Create peer
+// @Description Creates a new WireGuard peer. Auto-allocates IP address.
+// @Tags peers
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body CreatePeerRequest true "Peer configuration"
+// @Success 201 {object} Response{data=CreatePeerResponse}
+// @Failure 400 {object} Response{error=APIError}
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 403 {object} Response{error=APIError}
+// @Failure 409 {object} Response{error=APIError}
+// @Router /api/v1/peers [post]
 func (h *PeerHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Name                string `json:"name"`
-		AllowedIPs          string `json:"allowed_ips"`
-		DNS                 string `json:"dns"`
-		PersistentKeepalive int    `json:"persistent_keepalive"`
-		PublicKey           string `json:"public_key"`
-	}
+	var req CreatePeerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -229,24 +251,33 @@ func (h *PeerHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.reloadACL(r)
-	writeJSON(w, http.StatusCreated, createPeerResponse{
+	writeJSON(w, http.StatusCreated, CreatePeerResponse{
 		Peer:         peer,
 		PresharedKey: psk,
 	})
 }
 
+// HandleUpdate godoc
+// @Summary Update peer
+// @Description Updates an existing peer's configuration.
+// @Tags peers
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Peer ID"
+// @Param body body UpdatePeerRequest true "Fields to update"
+// @Success 200 {object} Response{data=domain.Peer}
+// @Failure 400 {object} Response{error=APIError}
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 404 {object} Response{error=APIError}
+// @Router /api/v1/peers/{id} [put]
 func (h *PeerHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	peer, _ := requirePeerAccess(h.store, w, r)
 	if peer == nil {
 		return
 	}
 
-	var req struct {
-		Name                string `json:"name"`
-		AllowedIPs          string `json:"allowed_ips"`
-		DNS                 string `json:"dns"`
-		PersistentKeepalive *int   `json:"persistent_keepalive"`
-	}
+	var req UpdatePeerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -276,6 +307,17 @@ func (h *PeerHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, peer)
 }
 
+// HandleDelete godoc
+// @Summary Delete peer
+// @Description Deletes a peer and removes it from the WireGuard interface.
+// @Tags peers
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Peer ID"
+// @Success 200 {object} Response{data=MessageResponse}
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 404 {object} Response{error=APIError}
+// @Router /api/v1/peers/{id} [delete]
 func (h *PeerHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	peer, _ := requirePeerAccess(h.store, w, r)
 	if peer == nil {
@@ -299,15 +341,28 @@ func (h *PeerHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "peer deleted"})
 }
 
+// HandleRegenerate godoc
+// @Summary Regenerate peer keys
+// @Description Replaces the peer's public key and generates a new preshared key.
+// @Tags peers
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Peer ID"
+// @Param body body RegeneratePeerRequest true "New public key"
+// @Success 200 {object} Response{data=CreatePeerResponse}
+// @Failure 400 {object} Response{error=APIError}
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 404 {object} Response{error=APIError}
+// @Failure 409 {object} Response{error=APIError}
+// @Router /api/v1/peers/{id}/regenerate [post]
 func (h *PeerHandler) HandleRegenerate(w http.ResponseWriter, r *http.Request) {
 	peer, _ := requirePeerAccess(h.store, w, r)
 	if peer == nil {
 		return
 	}
 
-	var req struct {
-		PublicKey string `json:"public_key"`
-	}
+	var req RegeneratePeerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -367,12 +422,23 @@ func (h *PeerHandler) HandleRegenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.reloadACL(r)
-	writeJSON(w, http.StatusOK, createPeerResponse{
+	writeJSON(w, http.StatusOK, CreatePeerResponse{
 		Peer:         peer,
 		PresharedKey: psk,
 	})
 }
 
+// HandleToggle godoc
+// @Summary Toggle peer
+// @Description Enables or disables a peer.
+// @Tags peers
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Peer ID"
+// @Success 200 {object} Response{data=domain.Peer}
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 404 {object} Response{error=APIError}
+// @Router /api/v1/peers/{id}/toggle [patch]
 func (h *PeerHandler) HandleToggle(w http.ResponseWriter, r *http.Request) {
 	peer, _ := requirePeerAccess(h.store, w, r)
 	if peer == nil {

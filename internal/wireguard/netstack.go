@@ -26,14 +26,15 @@ import (
 // NetstackManager manages a WireGuard interface using a fully userspace gVisor network stack.
 // This requires no NET_ADMIN capabilities or /dev/net/tun, making it suitable for AWS Fargate.
 type NetstackManager struct {
-	dev        *device.Device
-	gvStack    *stack.Stack
-	ep         *channel.Endpoint
-	forwarder  *netstackForwarder
-	acl        *acl.PolicyEngine
-	forwardAll bool             // tunnel mode: rewrite all destinations to 127.0.0.1
-	bindHub    *sharedBindHub   // shared UDP socket hub for tunnel multiplexing (main device only)
-	sharedBind conn.Bind        // if set, use this bind instead of creating a new UDP socket (tunnel mode)
+	dev            *device.Device
+	gvStack        *stack.Stack
+	ep             *channel.Endpoint
+	forwarder      *netstackForwarder
+	acl            *acl.PolicyEngine
+	localAddr      string           // server's VPN address (e.g., "10.0.0.1"), set after Start
+	extraLocalAddrs []string        // additional addresses to rewrite to 127.0.0.1 (tunnel mode)
+	bindHub        *sharedBindHub   // shared UDP socket hub for tunnel multiplexing (main device only)
+	sharedBind     conn.Bind        // if set, use this bind instead of creating a new UDP socket (tunnel mode)
 }
 
 func NewNetstackManager() *NetstackManager {
@@ -52,12 +53,18 @@ func (m *NetstackManager) SetPolicyEngine(engine *acl.PolicyEngine) {
 	m.acl = engine
 }
 
-// SetForwardAll configures the forwarder to rewrite ALL destinations to 127.0.0.1.
-// Used for tunnel interfaces where the netstack is purely a transport layer and all
-// received traffic should be delivered to services on the local host.
+// AddLocalAddr adds an address that the forwarder should treat as local,
+// rewriting it to 127.0.0.1. Used for tunnel interfaces so that traffic
+// addressed to the main server's VPN IP is delivered to localhost, while
+// other traffic (e.g., internet-bound) is forwarded to its real destination.
 // Must be called before Start.
-func (m *NetstackManager) SetForwardAll(enabled bool) {
-	m.forwardAll = enabled
+func (m *NetstackManager) AddLocalAddr(addr string) {
+	m.extraLocalAddrs = append(m.extraLocalAddrs, addr)
+}
+
+// LocalAddr returns the server's VPN address (set after Start).
+func (m *NetstackManager) LocalAddr() string {
+	return m.localAddr
 }
 
 func (m *NetstackManager) Start(cfg *domain.ServerConfig) error {
@@ -138,8 +145,11 @@ func (m *NetstackManager) Start(cfg *domain.ServerConfig) error {
 	// Register TCP/UDP forwarders before creating the WireGuard device.
 	// Pass the local VPN address so traffic to our own IP is rewritten to 127.0.0.1.
 	fwd := startForwarder(m.gvStack, localAddr.String(), m.acl)
-	fwd.forwardAll = m.forwardAll
+	for _, addr := range m.extraLocalAddrs {
+		fwd.addLocalAddr(addr)
+	}
 	m.forwarder = fwd
+	m.localAddr = localAddr.String()
 
 	// Create the netTun-compatible tun.Device backed by the channel endpoint
 	tunDev := &netstackTun{

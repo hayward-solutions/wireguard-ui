@@ -3,9 +3,11 @@ package wireguard
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"net/netip"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/hayward-solutions/wireguard-ui/internal/domain"
 )
@@ -198,6 +200,96 @@ func (tm *TunnelManager) IsRunning(id string) bool {
 	return ok
 }
 
+// StartDNSRefresh periodically re-resolves hostname-based tunnel endpoints
+// and updates WireGuard if the IP has changed. This handles ECS Fargate restarts
+// where tasks get new IPs but DNS is updated by a sidecar.
+func (tm *TunnelManager) StartDNSRefresh(interval time.Duration, stop <-chan struct{}) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				tm.RefreshEndpoints()
+			}
+		}
+	}()
+	slog.Info("tunnel DNS refresh started", "interval", interval)
+}
+
+// RefreshEndpoints re-resolves DNS for all running tunnels with hostname-based
+// endpoints and updates WireGuard if the resolved IP has changed.
+func (tm *TunnelManager) RefreshEndpoints() {
+	tm.mu.Lock()
+	// Snapshot tunnel state under lock
+	type tunnelSnapshot struct {
+		id       string
+		name     string
+		tunnel   *domain.Tunnel
+		manager  Manager
+	}
+	snapshots := make([]tunnelSnapshot, 0, len(tm.tunnels))
+	for id, inst := range tm.tunnels {
+		snapshots = append(snapshots, tunnelSnapshot{
+			id:      id,
+			name:    inst.tunnel.Name,
+			tunnel:  inst.tunnel,
+			manager: inst.manager,
+		})
+	}
+	tm.mu.Unlock()
+
+	for _, snap := range snapshots {
+		endpoint := snap.tunnel.PeerEndpoint
+		if endpoint == "" {
+			continue
+		}
+
+		// Skip if endpoint is already an IP (no DNS to refresh)
+		host, _, err := net.SplitHostPort(endpoint)
+		if err != nil {
+			continue
+		}
+		if net.ParseIP(host) != nil {
+			continue
+		}
+
+		// Resolve the current DNS value
+		resolved, err := resolveEndpoint(endpoint)
+		if err != nil {
+			slog.Warn("tunnel DNS refresh: resolve failed",
+				"tunnel", snap.name, "endpoint", endpoint, "error", err)
+			continue
+		}
+
+		// Compare against what WireGuard currently has
+		stats, err := snap.manager.GetStats()
+		if err != nil {
+			continue
+		}
+		if len(stats) > 0 && stats[0].Endpoint == resolved {
+			continue // no change
+		}
+
+		// Endpoint has changed — update via AddPeer (idempotent)
+		peer := tunnelToRemotePeer(snap.tunnel)
+		if err := snap.manager.AddPeer(peer); err != nil {
+			slog.Error("tunnel DNS refresh: failed to update endpoint",
+				"tunnel", snap.name, "error", err)
+			continue
+		}
+
+		currentEndpoint := ""
+		if len(stats) > 0 {
+			currentEndpoint = stats[0].Endpoint
+		}
+		slog.Info("tunnel endpoint updated via DNS refresh",
+			"tunnel", snap.name, "old", currentEndpoint, "new", resolved)
+	}
+}
+
 // Close shuts down all running tunnel interfaces.
 func (tm *TunnelManager) Close() error {
 	tm.mu.Lock()
@@ -219,12 +311,19 @@ func (tm *TunnelManager) createManager(t *domain.Tunnel) (Manager, string, error
 	switch tm.mode {
 	case TunnelModeNetstack:
 		nm := NewNetstackManager()
-		nm.SetForwardAll(true) // tunnel interfaces forward all traffic to localhost
 		// Share the main device's UDP socket so tunnels work in environments
 		// like Fargate where only one UDP port is exposed.
 		if tm.mainNetstack != nil {
 			if sharedBind := tm.mainNetstack.NewSharedBind(); sharedBind != nil {
 				nm.SetSharedBind(sharedBind)
+			}
+			// Register the main server's VPN address as a local address on the
+			// tunnel forwarder so traffic to it gets rewritten to 127.0.0.1
+			// (the VPN IP only exists in the main gVisor stack, not on the host).
+			// Without this, only the tunnel's own address is treated as local,
+			// and traffic to the server's VPN IP would fail.
+			if mainAddr := tm.mainNetstack.LocalAddr(); mainAddr != "" {
+				nm.AddLocalAddr(mainAddr)
 			}
 		}
 		return nm, "", nil

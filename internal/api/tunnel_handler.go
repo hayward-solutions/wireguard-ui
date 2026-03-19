@@ -101,6 +101,16 @@ func NewTunnelHandler(store database.Store, tunnelMgr *wireguard.TunnelManager) 
 	return &TunnelHandler{store: store, tunnelMgr: tunnelMgr}
 }
 
+// HandleList godoc
+// @Summary List tunnels
+// @Description Returns all tunnels with their runtime status.
+// @Tags tunnels
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} Response{data=[]TunnelWithStatus}
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 500 {object} Response{error=APIError}
+// @Router /api/v1/tunnels [get]
 func (h *TunnelHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	tunnels, err := h.store.ListTunnels(r.Context())
 	if err != nil {
@@ -112,12 +122,7 @@ func (h *TunnelHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 		tunnels = []domain.Tunnel{}
 	}
 
-	type tunnelWithStatus struct {
-		domain.Tunnel
-		Status *domain.TunnelStatus `json:"status"`
-	}
-
-	result := make([]tunnelWithStatus, len(tunnels))
+	result := make([]TunnelWithStatus, len(tunnels))
 	for i, t := range tunnels {
 		result[i].Tunnel = t
 		if h.tunnelMgr.IsRunning(t.ID) {
@@ -129,6 +134,17 @@ func (h *TunnelHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// HandleGet godoc
+// @Summary Get tunnel
+// @Description Returns a single tunnel by ID.
+// @Tags tunnels
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Tunnel ID"
+// @Success 200 {object} Response{data=domain.Tunnel}
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 404 {object} Response{error=APIError}
+// @Router /api/v1/tunnels/{id} [get]
 func (h *TunnelHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	tunnel, err := h.store.GetTunnel(r.Context(), id)
@@ -144,22 +160,21 @@ func (h *TunnelHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tunnel)
 }
 
+// HandleCreate godoc
+// @Summary Create tunnel
+// @Description Creates a new WireGuard tunnel.
+// @Tags tunnels
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body CreateTunnelRequest true "Tunnel configuration"
+// @Success 201 {object} Response{data=CreateTunnelResponse}
+// @Failure 400 {object} Response{error=APIError}
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 500 {object} Response{error=APIError}
+// @Router /api/v1/tunnels [post]
 func (h *TunnelHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Name                string `json:"name"`
-		Description         string `json:"description"`
-		PrivateKey          string `json:"private_key"`
-		PublicKey           string `json:"public_key"`
-		Address             string `json:"address"`
-		ListenPort          int    `json:"listen_port"`
-		DNS                 string `json:"dns"`
-		MTU                 int    `json:"mtu"`
-		PeerPublicKey       string `json:"peer_public_key"`
-		PeerEndpoint        string `json:"peer_endpoint"`
-		PresharedKey        string `json:"preshared_key"`
-		PeerAllowedIPs      string `json:"peer_allowed_ips"`
-		PersistentKeepalive int    `json:"persistent_keepalive"`
-	}
+	var req CreateTunnelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -266,16 +281,26 @@ func (h *TunnelHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return with PSK visible (one-time disclosure like peer creation)
-	type createResponse struct {
-		*domain.Tunnel
-		PresharedKey string `json:"preshared_key,omitempty"`
-	}
-	writeJSON(w, http.StatusCreated, createResponse{
+	writeJSON(w, http.StatusCreated, CreateTunnelResponse{
 		Tunnel:       tunnel,
 		PresharedKey: psk,
 	})
 }
 
+// HandleUpdate godoc
+// @Summary Update tunnel
+// @Description Updates an existing tunnel's configuration.
+// @Tags tunnels
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Tunnel ID"
+// @Param body body UpdateTunnelRequest true "Fields to update"
+// @Success 200 {object} Response{data=domain.Tunnel}
+// @Failure 400 {object} Response{error=APIError}
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 404 {object} Response{error=APIError}
+// @Router /api/v1/tunnels/{id} [put]
 func (h *TunnelHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	tunnel, err := h.store.GetTunnel(r.Context(), id)
@@ -289,18 +314,7 @@ func (h *TunnelHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Name                *string `json:"name"`
-		Description         *string `json:"description"`
-		Address             *string `json:"address"`
-		ListenPort          *int    `json:"listen_port"`
-		DNS                 *string `json:"dns"`
-		MTU                 *int    `json:"mtu"`
-		PeerPublicKey       *string `json:"peer_public_key"`
-		PeerEndpoint        *string `json:"peer_endpoint"`
-		PeerAllowedIPs      *string `json:"peer_allowed_ips"`
-		PersistentKeepalive *int    `json:"persistent_keepalive"`
-	}
+	var req UpdateTunnelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -383,6 +397,17 @@ func (h *TunnelHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tunnel)
 }
 
+// HandleDelete godoc
+// @Summary Delete tunnel
+// @Description Deletes a tunnel and stops it if running.
+// @Tags tunnels
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Tunnel ID"
+// @Success 200 {object} Response{data=MessageResponse}
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 404 {object} Response{error=APIError}
+// @Router /api/v1/tunnels/{id} [delete]
 func (h *TunnelHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	tunnel, err := h.store.GetTunnel(r.Context(), id)
@@ -411,6 +436,17 @@ func (h *TunnelHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "tunnel deleted"})
 }
 
+// HandleToggle godoc
+// @Summary Toggle tunnel
+// @Description Enables or disables a tunnel.
+// @Tags tunnels
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Tunnel ID"
+// @Success 200 {object} Response{data=domain.Tunnel}
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 404 {object} Response{error=APIError}
+// @Router /api/v1/tunnels/{id}/toggle [patch]
 func (h *TunnelHandler) HandleToggle(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	tunnel, err := h.store.GetTunnel(r.Context(), id)
@@ -445,6 +481,18 @@ func (h *TunnelHandler) HandleToggle(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tunnel)
 }
 
+// HandleStatus godoc
+// @Summary Get tunnel status
+// @Description Returns the runtime status of a tunnel.
+// @Tags tunnels
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Tunnel ID"
+// @Success 200 {object} Response{data=domain.TunnelStatus}
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 404 {object} Response{error=APIError}
+// @Failure 500 {object} Response{error=APIError}
+// @Router /api/v1/tunnels/{id}/status [get]
 func (h *TunnelHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	tunnel, err := h.store.GetTunnel(r.Context(), id)
@@ -468,6 +516,18 @@ func (h *TunnelHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, status)
 }
 
+// HandleRemoteConfig godoc
+// @Summary Get tunnel remote config
+// @Description Returns the WireGuard configuration file for the remote side of a tunnel.
+// @Tags tunnels
+// @Produce text/plain
+// @Security BearerAuth
+// @Param id path string true "Tunnel ID"
+// @Success 200 {string} string "WireGuard configuration file"
+// @Failure 401 {object} Response{error=APIError}
+// @Failure 404 {object} Response{error=APIError}
+// @Failure 500 {object} Response{error=APIError}
+// @Router /api/v1/tunnels/{id}/config [get]
 func (h *TunnelHandler) HandleRemoteConfig(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	tunnel, err := h.store.GetTunnel(r.Context(), id)

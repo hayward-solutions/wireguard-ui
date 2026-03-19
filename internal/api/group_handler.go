@@ -21,6 +21,15 @@ func NewGroupHandler(store database.Store, engine *acl.PolicyEngine) *GroupHandl
 	return &GroupHandler{store: store, engine: engine}
 }
 
+// HandleList godoc
+// @Summary List groups
+// @Description Returns all groups.
+// @Tags groups
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {array} domain.Group
+// @Failure 500 {object} Response
+// @Router /api/v1/groups [get]
 func (h *GroupHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	groups, err := h.store.ListGroups(r.Context())
 	if err != nil {
@@ -34,6 +43,16 @@ func (h *GroupHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, groups)
 }
 
+// HandleGet godoc
+// @Summary Get group
+// @Description Returns a single group by ID.
+// @Tags groups
+// @Security BearerAuth
+// @Produce json
+// @Param id path string true "Group ID"
+// @Success 200 {object} domain.Group
+// @Failure 404 {object} Response
+// @Router /api/v1/groups/{id} [get]
 func (h *GroupHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	group, err := h.store.GetGroup(r.Context(), id)
@@ -49,10 +68,20 @@ func (h *GroupHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, group)
 }
 
+// HandleCreate godoc
+// @Summary Create group
+// @Description Creates a new group.
+// @Tags groups
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param body body CreateGroupRequest true "Group details"
+// @Success 201 {object} domain.Group
+// @Failure 400 {object} Response
+// @Failure 409 {object} Response
+// @Router /api/v1/groups [post]
 func (h *GroupHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Name string `json:"name"`
-	}
+	var req CreateGroupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -84,6 +113,19 @@ func (h *GroupHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, group)
 }
 
+// HandleUpdate godoc
+// @Summary Update group
+// @Description Updates an existing group.
+// @Tags groups
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path string true "Group ID"
+// @Param body body UpdateGroupRequest true "Fields to update"
+// @Success 200 {object} domain.Group
+// @Failure 400 {object} Response
+// @Failure 404 {object} Response
+// @Router /api/v1/groups/{id} [put]
 func (h *GroupHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	group, err := h.store.GetGroup(r.Context(), id)
@@ -97,9 +139,7 @@ func (h *GroupHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Name string `json:"name"`
-	}
+	var req UpdateGroupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -119,6 +159,16 @@ func (h *GroupHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, group)
 }
 
+// HandleDelete godoc
+// @Summary Delete group
+// @Description Deletes a group by ID.
+// @Tags groups
+// @Security BearerAuth
+// @Produce json
+// @Param id path string true "Group ID"
+// @Success 200 {object} Response{data=MessageResponse}
+// @Failure 404 {object} Response
+// @Router /api/v1/groups/{id} [delete]
 func (h *GroupHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	group, err := h.store.GetGroup(r.Context(), id)
@@ -144,6 +194,16 @@ func (h *GroupHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "group deleted"})
 }
 
+// HandleMembers godoc
+// @Summary List group members
+// @Description Returns the members of a group.
+// @Tags groups
+// @Security BearerAuth
+// @Produce json
+// @Param id path string true "Group ID"
+// @Success 200 {array} domain.User
+// @Failure 404 {object} Response
+// @Router /api/v1/groups/{id}/members [get]
 func (h *GroupHandler) HandleMembers(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	group, err := h.store.GetGroup(r.Context(), id)
@@ -169,6 +229,19 @@ func (h *GroupHandler) HandleMembers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, members)
 }
 
+// HandleSetUserGroups godoc
+// @Summary Set user groups
+// @Description Sets the group memberships for a user.
+// @Tags users
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path string true "User ID"
+// @Param body body SetUserGroupsRequest true "Group IDs"
+// @Success 200 {array} domain.Group
+// @Failure 400 {object} Response
+// @Failure 404 {object} Response
+// @Router /api/v1/users/{id}/groups [put]
 func (h *GroupHandler) HandleSetUserGroups(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
 	user, err := h.store.GetUser(r.Context(), userID)
@@ -182,9 +255,7 @@ func (h *GroupHandler) HandleSetUserGroups(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	var req struct {
-		GroupIDs []string `json:"group_ids"`
-	}
+	var req SetUserGroupsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return

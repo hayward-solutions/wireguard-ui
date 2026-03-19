@@ -24,6 +24,15 @@ func NewTokenHandler(store database.Store, maxLifetime time.Duration) *TokenHand
 	return &TokenHandler{store: store, maxLifetime: maxLifetime}
 }
 
+// HandleList godoc
+// @Summary List API tokens
+// @Description Returns all API tokens for the authenticated user with expiration status.
+// @Tags self-service
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {array} TokenWithStatus
+// @Failure 401 {object} Response
+// @Router /api/v1/me/tokens [get]
 func (h *TokenHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromContext(r.Context())
 	if claims == nil {
@@ -43,13 +52,9 @@ func (h *TokenHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	// Annotate tokens with rotation status
 	now := time.Now()
-	type tokenResponse struct {
-		domain.APIToken
-		Status string `json:"status"`
-	}
-	resp := make([]tokenResponse, len(tokens))
+	resp := make([]TokenWithStatus, len(tokens))
 	for i, t := range tokens {
-		resp[i] = tokenResponse{APIToken: t, Status: "active"}
+		resp[i] = TokenWithStatus{APIToken: t, Status: "active"}
 		if t.ExpiresAt != nil {
 			remaining := t.ExpiresAt.Sub(now)
 			switch {
@@ -64,6 +69,18 @@ func (h *TokenHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// HandleCreate godoc
+// @Summary Create API token
+// @Description Creates a new API token for the authenticated user. The raw token is returned only once.
+// @Tags self-service
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param body body CreateTokenRequest true "Token details"
+// @Success 201 {object} CreateTokenResponse
+// @Failure 400 {object} Response
+// @Failure 401 {object} Response
+// @Router /api/v1/me/tokens [post]
 func (h *TokenHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromContext(r.Context())
 	if claims == nil {
@@ -71,10 +88,7 @@ func (h *TokenHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Name      string `json:"name"`
-		ExpiresIn string `json:"expires_in"` // e.g. "720h" (30 days); clamped to max lifetime
-	}
+	var req CreateTokenRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -145,6 +159,17 @@ func (h *TokenHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleDelete godoc
+// @Summary Delete API token
+// @Description Deletes an API token by ID.
+// @Tags self-service
+// @Security BearerAuth
+// @Produce json
+// @Param id path string true "Token ID"
+// @Success 200 {object} Response{data=MessageResponse}
+// @Failure 401 {object} Response
+// @Failure 404 {object} Response
+// @Router /api/v1/me/tokens/{id} [delete]
 func (h *TokenHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromContext(r.Context())
 	if claims == nil {

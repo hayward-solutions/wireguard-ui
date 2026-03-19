@@ -50,6 +50,15 @@ func NewUserHandler(store database.Store) *UserHandler {
 	return &UserHandler{store: store}
 }
 
+// HandleList godoc
+// @Summary List users
+// @Description Returns all users.
+// @Tags users
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {array} domain.User
+// @Failure 500 {object} Response
+// @Router /api/v1/users [get]
 func (h *UserHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	users, err := h.store.ListUsers(r.Context())
 	if err != nil {
@@ -59,6 +68,16 @@ func (h *UserHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, users)
 }
 
+// HandleGet godoc
+// @Summary Get user
+// @Description Returns a single user by ID.
+// @Tags users
+// @Security BearerAuth
+// @Produce json
+// @Param id path string true "User ID"
+// @Success 200 {object} domain.User
+// @Failure 404 {object} Response
+// @Router /api/v1/users/{id} [get]
 func (h *UserHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	user, err := h.store.GetUser(r.Context(), id)
@@ -73,6 +92,19 @@ func (h *UserHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, user)
 }
 
+// HandleCreate godoc
+// @Summary Create user
+// @Description Creates a new local user. Requires admin role.
+// @Tags users
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param body body CreateUserRequest true "User details"
+// @Success 201 {object} domain.User
+// @Failure 400 {object} Response
+// @Failure 403 {object} Response
+// @Failure 409 {object} Response
+// @Router /api/v1/users [post]
 func (h *UserHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromContext(r.Context())
 	if claims == nil || claims.Role != domain.RoleAdmin {
@@ -80,12 +112,7 @@ func (h *UserHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Name     string `json:"name"`
-		Role     string `json:"role"`
-	}
+	var req CreateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -142,6 +169,20 @@ func (h *UserHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, user)
 }
 
+// HandleUpdate godoc
+// @Summary Update user
+// @Description Updates an existing user. Requires admin role.
+// @Tags users
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path string true "User ID"
+// @Param body body UpdateUserRequest true "Fields to update"
+// @Success 200 {object} domain.User
+// @Failure 400 {object} Response
+// @Failure 403 {object} Response
+// @Failure 404 {object} Response
+// @Router /api/v1/users/{id} [put]
 func (h *UserHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromContext(r.Context())
 	if claims == nil || claims.Role != domain.RoleAdmin {
@@ -156,11 +197,7 @@ func (h *UserHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Username string `json:"username"`
-		Name     string `json:"name"`
-		Role     string `json:"role"`
-	}
+	var req UpdateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -196,6 +233,17 @@ func (h *UserHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, user)
 }
 
+// HandleDelete godoc
+// @Summary Delete user
+// @Description Deletes a user by ID. Requires admin role. Cannot delete yourself.
+// @Tags users
+// @Security BearerAuth
+// @Produce json
+// @Param id path string true "User ID"
+// @Success 200 {object} Response{data=MessageResponse}
+// @Failure 400 {object} Response
+// @Failure 403 {object} Response
+// @Router /api/v1/users/{id} [delete]
 func (h *UserHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromContext(r.Context())
 	if claims == nil || claims.Role != domain.RoleAdmin {
@@ -220,6 +268,19 @@ func (h *UserHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "user deleted"})
 }
 
+// HandleResetPassword godoc
+// @Summary Reset user password
+// @Description Resets a user's password. Requires admin role. Revokes all sessions.
+// @Tags users
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path string true "User ID"
+// @Param body body ResetPasswordRequest true "New password"
+// @Success 200 {object} Response{data=MessageResponse}
+// @Failure 400 {object} Response
+// @Failure 403 {object} Response
+// @Router /api/v1/users/{id}/reset-password [post]
 func (h *UserHandler) HandleResetPassword(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromContext(r.Context())
 	if claims == nil || claims.Role != domain.RoleAdmin {
@@ -228,9 +289,7 @@ func (h *UserHandler) HandleResetPassword(w http.ResponseWriter, r *http.Request
 	}
 
 	id := chi.URLParam(r, "id")
-	var req struct {
-		Password string `json:"password"`
-	}
+	var req ResetPasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Password == "" {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "password is required")
 		return
@@ -260,6 +319,18 @@ func (h *UserHandler) HandleResetPassword(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]string{"message": "password reset"})
 }
 
+// HandleChangePassword godoc
+// @Summary Change own password
+// @Description Allows the authenticated user to change their own password. Revokes all sessions.
+// @Tags self-service
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param body body ChangePasswordRequest true "Current and new password"
+// @Success 200 {object} Response{data=MessageResponse}
+// @Failure 400 {object} Response
+// @Failure 401 {object} Response
+// @Router /api/v1/me/password [post]
 func (h *UserHandler) HandleChangePassword(w http.ResponseWriter, r *http.Request) {
 	claims := auth.ClaimsFromContext(r.Context())
 	if claims == nil {
@@ -267,10 +338,7 @@ func (h *UserHandler) HandleChangePassword(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	var req struct {
-		CurrentPassword string `json:"current_password"`
-		NewPassword     string `json:"new_password"`
-	}
+	var req ChangePasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return

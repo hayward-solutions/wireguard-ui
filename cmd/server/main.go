@@ -1,4 +1,27 @@
+// @title WireGuard UI API
+// @version 1.0
+// @description REST API for managing WireGuard VPN peers, tunnels, users, groups, and ACLs.
+//
+// @contact.name WireGuard UI
+// @license.name MIT
+//
+// @host localhost:8080
+// @BasePath /
+// @schemes http https
+//
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description JWT token or API key. Use "Bearer {token}" format.
+//
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name X-API-Key
+// @description Admin API key for machine-to-machine access.
+
 package main
+
+//go:generate swag init -g cmd/server/main.go -o docs/ --parseInternal --parseDependency --quiet -d ../../
 
 import (
 	"context"
@@ -274,6 +297,10 @@ func run() error {
 			}
 		}
 	}
+
+	// Start periodic DNS re-resolution for tunnel endpoints.
+	// Handles ECS Fargate restarts where tasks get new IPs.
+	tunnelMgr.StartDNSRefresh(30*time.Second, ctx.Done())
 
 	// Reload ACL policies now that listeners are registered and peers are synced.
 	// The initial Reload() above ran before listeners were registered.

@@ -8,6 +8,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
+
+	_ "github.com/hayward-solutions/wireguard-ui/docs"
 	"github.com/hayward-solutions/wireguard-ui/internal/acl"
 	"github.com/hayward-solutions/wireguard-ui/internal/auth"
 	"github.com/hayward-solutions/wireguard-ui/internal/database"
@@ -95,6 +98,12 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 	}
 
 	// Health check (unauthenticated)
+	// @Summary Health check
+	// @Description Returns server health status.
+	// @Tags health
+	// @Produce json
+	// @Success 200 {object} Response{data=HealthResponse}
+	// @Router /api/v1/health [get]
 	r.Get("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
@@ -246,6 +255,11 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 			})
 		})
 	})
+
+	// Swagger UI and OpenAPI spec (unauthenticated)
+	r.Get("/api/docs/*", httpSwagger.Handler(
+		httpSwagger.URL("/api/docs/doc.json"),
+	))
 
 	// Serve frontend SPA
 	if cfg.FrontendFS != nil {
