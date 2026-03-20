@@ -207,10 +207,30 @@ func (h *TunnelHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate caller-supplied keys before persisting.
+	hasPrivate := req.PrivateKey != ""
+	hasPublic := req.PublicKey != ""
+	if hasPrivate != hasPublic {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "private_key and public_key must both be provided or both omitted")
+		return
+	}
+	if hasPrivate && hasPublic {
+		if err := wireguard.ValidateKeyPair(req.PrivateKey, req.PublicKey); err != nil {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid keypair: "+err.Error())
+			return
+		}
+	}
+	if req.PeerPublicKey != "" {
+		if err := wireguard.ValidateKey(req.PeerPublicKey); err != nil {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid peer_public_key: must be a valid base64-encoded 32-byte WireGuard key")
+			return
+		}
+	}
+
 	// Use client-provided keypair if both private and public keys are given,
 	// otherwise generate a new keypair server-side.
 	var keyPair *wireguard.KeyPair
-	if req.PrivateKey != "" && req.PublicKey != "" {
+	if hasPrivate {
 		keyPair = &wireguard.KeyPair{PrivateKey: req.PrivateKey, PublicKey: req.PublicKey}
 	} else {
 		var err error
@@ -225,6 +245,12 @@ func (h *TunnelHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	// Use provided PSK (for tunnel peering where both sides need the same key),
 	// or generate a new one.
 	psk := req.PresharedKey
+	if req.PresharedKey != "" {
+		if err := wireguard.ValidateKey(req.PresharedKey); err != nil {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid preshared_key: must be a valid base64-encoded 32-byte WireGuard key")
+			return
+		}
+	}
 	if psk == "" {
 		var err error
 		psk, err = wireguard.GeneratePresharedKey()

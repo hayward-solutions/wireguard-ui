@@ -32,11 +32,33 @@ func GeneratePresharedKey() (string, error) {
 	return key.String(), nil
 }
 
+// ValidateKey checks that a base64-encoded string is a valid 32-byte WireGuard key.
+func ValidateKey(key string) error {
+	_, err := wgtypes.ParseKey(key)
+	return err
+}
+
 // ValidatePublicKey checks that a base64-encoded string is a valid WireGuard key.
 func ValidatePublicKey(key string) error {
-	_, err := wgtypes.ParseKey(key)
-	if err != nil {
+	if err := ValidateKey(key); err != nil {
 		return fmt.Errorf("invalid WireGuard public key: %w", err)
+	}
+	return nil
+}
+
+// ValidateKeyPair checks that both keys are valid and that publicKey is derived
+// from privateKey (Curve25519 key agreement).
+func ValidateKeyPair(privateKey, publicKey string) error {
+	priv, err := wgtypes.ParseKey(privateKey)
+	if err != nil {
+		return fmt.Errorf("invalid private key: %w", err)
+	}
+	pub, err := wgtypes.ParseKey(publicKey)
+	if err != nil {
+		return fmt.Errorf("invalid public key: %w", err)
+	}
+	if priv.PublicKey() != pub {
+		return fmt.Errorf("public key does not match private key")
 	}
 	return nil
 }
