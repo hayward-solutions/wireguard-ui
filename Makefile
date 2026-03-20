@@ -25,7 +25,7 @@ test:
 	go test ./...
 
 test-frontend:
-	cd frontend && npm test
+	cd frontend && npm run check
 
 # Integration test: verify WireGuard netstack tunnel works without NET_ADMIN
 test-vpn:
@@ -51,8 +51,6 @@ swagger:
 lint:
 	golangci-lint run ./...
 
-lint-frontend:
-	cd frontend && npm run lint
 
 # Docker
 docker:
