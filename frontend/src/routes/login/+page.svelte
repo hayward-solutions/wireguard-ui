@@ -38,9 +38,13 @@
 		loading = true;
 		error = '';
 		try {
+			const loginHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+			const csrf = getCSRFToken();
+			if (csrf) loginHeaders['X-CSRF-Token'] = csrf;
+
 			const res = await fetch('/auth/login', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: loginHeaders,
 				credentials: 'include',
 				body: JSON.stringify({ username, password })
 			});
