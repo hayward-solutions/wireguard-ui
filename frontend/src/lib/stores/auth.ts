@@ -18,8 +18,27 @@ export async function checkAuth() {
 		// Use raw fetch — don't go through api.request() which auto-redirects on 401
 		const res = await fetch('/auth/me', { credentials: 'include' });
 		if (res.ok) {
-			const json = await res.json();
-			user.set(json.data);
+			user.set((await res.json()).data);
+		} else if (res.status === 401) {
+			// JWT expired — try refreshing via the long-lived session cookie
+			const headers: Record<string, string> = {};
+			const csrf = getCSRFToken();
+			if (csrf) headers['X-CSRF-Token'] = csrf;
+			const refreshRes = await fetch('/auth/refresh', {
+				method: 'POST',
+				headers,
+				credentials: 'include'
+			});
+			if (refreshRes.ok) {
+				const retry = await fetch('/auth/me', { credentials: 'include' });
+				if (retry.ok) {
+					user.set((await retry.json()).data);
+				} else {
+					user.set(null);
+				}
+			} else {
+				user.set(null);
+			}
 		} else {
 			user.set(null);
 		}
