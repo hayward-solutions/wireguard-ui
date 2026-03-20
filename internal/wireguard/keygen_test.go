@@ -104,12 +104,119 @@ func TestValidatePublicKey(t *testing.T) {
 	}
 }
 
+func TestValidateKey(t *testing.T) {
+	kp := generateTestKeyPair(t)
+
+	tests := []struct {
+		name    string
+		key     string
+		wantErr bool
+	}{
+		{name: "valid public key", key: kp.PublicKey, wantErr: false},
+		{name: "valid private key", key: kp.PrivateKey, wantErr: false},
+		{name: "empty string", key: "", wantErr: true},
+		{name: "bad base64", key: "not-a-key!!!", wantErr: true},
+		{name: "truncated key", key: kp.PublicKey[:10], wantErr: true},
+		{name: "wrong length base64", key: base64.StdEncoding.EncodeToString([]byte("tooshort")), wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateKey(tt.key)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateKey(%q) error = %v, wantErr %v", tt.key, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateKeyPair(t *testing.T) {
+	kp := generateTestKeyPair(t)
+	kp2 := generateTestKeyPair(t)
+
+	tests := []struct {
+		name       string
+		privateKey string
+		publicKey  string
+		wantErr    bool
+		errMsg     string
+	}{
+		{
+			name:       "matching keypair",
+			privateKey: kp.PrivateKey,
+			publicKey:  kp.PublicKey,
+			wantErr:    false,
+		},
+		{
+			name:       "mismatched keypair",
+			privateKey: kp.PrivateKey,
+			publicKey:  kp2.PublicKey,
+			wantErr:    true,
+			errMsg:     "public key does not match private key",
+		},
+		{
+			name:       "invalid private key",
+			privateKey: "garbage",
+			publicKey:  kp.PublicKey,
+			wantErr:    true,
+			errMsg:     "invalid private key",
+		},
+		{
+			name:       "invalid public key",
+			privateKey: kp.PrivateKey,
+			publicKey:  "garbage",
+			wantErr:    true,
+			errMsg:     "invalid public key",
+		},
+		{
+			name:       "both empty",
+			privateKey: "",
+			publicKey:  "",
+			wantErr:    true,
+			errMsg:     "invalid private key",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateKeyPair(tt.privateKey, tt.publicKey)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateKeyPair() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr && tt.errMsg != "" && err != nil {
+				if got := err.Error(); !contains(got, tt.errMsg) {
+					t.Errorf("ValidateKeyPair() error = %q, want substring %q", got, tt.errMsg)
+				}
+			}
+		})
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && searchString(s, substr)
+}
+
+func searchString(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
 // generateTestPublicKey is a helper that produces a valid WireGuard public key for tests.
 func generateTestPublicKey(t *testing.T) string {
+	t.Helper()
+	return generateTestKeyPair(t).PublicKey
+}
+
+// generateTestKeyPair is a helper that produces a valid WireGuard key pair for tests.
+func generateTestKeyPair(t *testing.T) *KeyPair {
 	t.Helper()
 	kp, err := GenerateKeyPair()
 	if err != nil {
 		t.Fatalf("GenerateKeyPair() error = %v", err)
 	}
-	return kp.PublicKey
+	return kp
 }
