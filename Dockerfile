@@ -24,4 +24,6 @@ RUN apk add --no-cache ca-certificates iptables ip6tables wireguard-tools
 COPY --from=backend-builder /wireguard-ui /usr/local/bin/wireguard-ui
 RUN mkdir -p /data
 EXPOSE 8080 51820/udp
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["wireguard-ui", "healthcheck"]
 ENTRYPOINT ["wireguard-ui"]
