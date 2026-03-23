@@ -7,31 +7,42 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"strings"
 
 	"golang.org/x/crypto/argon2"
+	"golang.org/x/crypto/hkdf"
 )
 
 const (
 	// Prefix for legacy v1 encrypted values (SHA-256 derived key).
 	v1Prefix = "enc:"
-	// Prefix for v2 encrypted values (Argon2id derived key).
+	// Prefix for legacy v2 encrypted values (Argon2id derived key).
 	v2Prefix = "enc:v2:"
+	// Prefix for v3 encrypted values (HKDF derived key).
+	v3Prefix = "enc:v3:"
 
-	// Argon2id parameters (OWASP recommended).
+	// Argon2id parameters for legacy v2 decryption.
 	argon2Time    = 1
 	argon2Memory  = 64 * 1024 // 64 MiB
 	argon2Threads = 4
 	argon2KeyLen  = 32
 
 	saltSize = 16
+	keyLen   = 32
 )
 
 // Encryptor handles AES-256-GCM encryption and decryption of sensitive values.
-// New values are encrypted with Argon2id key derivation (v2 format).
-// Legacy v1 values (SHA-256 derived key) are transparently decrypted.
+//
+// New values are encrypted with HKDF key derivation (v3 format), which derives
+// a unique per-record key from a master key using a random salt. The master key
+// is derived once at construction time via HKDF-Extract, making encrypt/decrypt
+// operations fast (single HMAC vs. 64 MiB Argon2id per call).
+//
+// Legacy v1 (SHA-256) and v2 (Argon2id) values are transparently decrypted.
 type Encryptor struct {
-	passphrase []byte      // raw passphrase for Argon2id derivation
+	masterKey  []byte      // HKDF-Extract derived master key (32 bytes)
+	passphrase []byte      // raw passphrase for legacy Argon2id v2 decryption
 	legacyGCM  cipher.AEAD // SHA-256-derived GCM for decrypting v1 data
 }
 
@@ -40,6 +51,14 @@ type Encryptor struct {
 func NewEncryptor(key string) (*Encryptor, error) {
 	if key == "" {
 		return nil, nil
+	}
+
+	// Derive master key via HKDF-Extract for v3 encryption.
+	// The passphrase is already high-entropy (validated to be 16+ chars at startup),
+	// so HKDF is appropriate here (unlike Argon2id which is for weak passwords).
+	masterKey, err := deriveMasterKey([]byte(key))
+	if err != nil {
+		return nil, fmt.Errorf("derive master key: %w", err)
 	}
 
 	// Derive legacy GCM for v1 backward compatibility.
@@ -54,27 +73,31 @@ func NewEncryptor(key string) (*Encryptor, error) {
 	}
 
 	return &Encryptor{
+		masterKey:  masterKey,
 		passphrase: []byte(key),
 		legacyGCM:  legacyGCM,
 	}, nil
 }
 
-// Encrypt encrypts a plaintext string using Argon2id key derivation and AES-256-GCM.
-// Returns an "enc:v2:"-prefixed base64 string.
+// Encrypt encrypts a plaintext string using HKDF key derivation and AES-256-GCM.
+// Returns an "enc:v3:"-prefixed base64 string.
 // If the encryptor is nil (encryption disabled), returns the plaintext unchanged.
 func (e *Encryptor) Encrypt(plaintext string) (string, error) {
 	if e == nil || plaintext == "" {
 		return plaintext, nil
 	}
 
-	// Generate random salt for Argon2id.
+	// Generate random salt for HKDF-Expand.
 	salt := make([]byte, saltSize)
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("generate salt: %w", err)
 	}
 
-	// Derive key via Argon2id.
-	key := deriveKey(e.passphrase, salt)
+	// Derive per-record key via HKDF-Expand.
+	key, err := deriveRecordKey(e.masterKey, salt)
+	if err != nil {
+		return "", fmt.Errorf("derive record key: %w", err)
+	}
 
 	// Encrypt with AES-256-GCM.
 	ciphertext, err := encryptWithKey(key, []byte(plaintext))
@@ -87,11 +110,11 @@ func (e *Encryptor) Encrypt(plaintext string) (string, error) {
 	payload = append(payload, salt...)
 	payload = append(payload, ciphertext...)
 
-	return v2Prefix + base64.StdEncoding.EncodeToString(payload), nil
+	return v3Prefix + base64.StdEncoding.EncodeToString(payload), nil
 }
 
 // Decrypt decrypts an encrypted string back to plaintext.
-// Supports both v2 (Argon2id) and legacy v1 (SHA-256) formats.
+// Supports v3 (HKDF), v2 (Argon2id), and legacy v1 (SHA-256) formats.
 // If the value has no encryption prefix, it is returned as-is (plaintext).
 // If the encryptor is nil, returns the value unchanged.
 func (e *Encryptor) Decrypt(value string) (string, error) {
@@ -99,7 +122,12 @@ func (e *Encryptor) Decrypt(value string) (string, error) {
 		return value, nil
 	}
 
-	// Check v2 first (more specific prefix).
+	// Check v3 first (most specific prefix).
+	if strings.HasPrefix(value, v3Prefix) {
+		return e.decryptV3(strings.TrimPrefix(value, v3Prefix))
+	}
+
+	// Check v2 (Argon2id).
 	if strings.HasPrefix(value, v2Prefix) {
 		return e.decryptV2(strings.TrimPrefix(value, v2Prefix))
 	}
@@ -111,6 +139,34 @@ func (e *Encryptor) Decrypt(value string) (string, error) {
 
 	// No prefix — plaintext passthrough.
 	return value, nil
+}
+
+// decryptV3 decrypts a v3 formatted value (HKDF derived key).
+func (e *Encryptor) decryptV3(encoded string) (string, error) {
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return "", fmt.Errorf("base64 decode: %w", err)
+	}
+
+	if len(data) < saltSize+12 { // salt + minimum nonce size
+		return "", fmt.Errorf("ciphertext too short")
+	}
+
+	salt := data[:saltSize]
+	remainder := data[saltSize:]
+
+	// Derive per-record key via HKDF-Expand using the stored salt.
+	key, err := deriveRecordKey(e.masterKey, salt)
+	if err != nil {
+		return "", fmt.Errorf("derive record key: %w", err)
+	}
+
+	plaintext, err := decryptWithKey(key, remainder)
+	if err != nil {
+		return "", err
+	}
+
+	return string(plaintext), nil
 }
 
 // decryptV2 decrypts a v2 formatted value (Argon2id derived key).
@@ -128,7 +184,7 @@ func (e *Encryptor) decryptV2(encoded string) (string, error) {
 	remainder := data[saltSize:]
 
 	// Derive key via Argon2id using the stored salt.
-	key := deriveKey(e.passphrase, salt)
+	key := deriveKeyArgon2(e.passphrase, salt)
 
 	plaintext, err := decryptWithKey(key, remainder)
 	if err != nil {
@@ -159,8 +215,34 @@ func (e *Encryptor) decryptV1(encoded string) (string, error) {
 	return string(plaintext), nil
 }
 
-// deriveKey derives a 32-byte encryption key from a passphrase and salt using Argon2id.
-func deriveKey(passphrase, salt []byte) []byte {
+// deriveMasterKey derives a 32-byte master key from a passphrase using HKDF-Extract.
+func deriveMasterKey(passphrase []byte) ([]byte, error) {
+	// Use HKDF-Extract with a fixed salt to derive a pseudorandom key.
+	// The fixed salt provides domain separation; the passphrase is already
+	// high-entropy so a random salt is not required.
+	hkdfSalt := []byte("wireguard-ui-encryption-v3")
+	r := hkdf.New(sha256.New, passphrase, hkdfSalt, []byte("master-key"))
+	key := make([]byte, keyLen)
+	if _, err := io.ReadFull(r, key); err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
+// deriveRecordKey derives a 32-byte per-record encryption key from a master key
+// and a random salt using HKDF-Expand. This is fast (single HMAC operation).
+func deriveRecordKey(masterKey, salt []byte) ([]byte, error) {
+	r := hkdf.New(sha256.New, masterKey, salt, []byte("record-key"))
+	key := make([]byte, keyLen)
+	if _, err := io.ReadFull(r, key); err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
+// deriveKeyArgon2 derives a 32-byte encryption key from a passphrase and salt
+// using Argon2id. Used only for decrypting legacy v2 data.
+func deriveKeyArgon2(passphrase, salt []byte) []byte {
 	return argon2.IDKey(passphrase, salt, argon2Time, argon2Memory, argon2Threads, argon2KeyLen)
 }
 

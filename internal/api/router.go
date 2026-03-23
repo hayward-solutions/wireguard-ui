@@ -60,6 +60,7 @@ func NewRouter(cfg RouterConfig) *chi.Mux {
 	r.Use(TrustedProxyMiddleware(cfg.TrustedProxies))
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(BodyLimitMiddleware)
 	// Only allow credentialed cross-origin requests for explicitly listed origins.
 	// Wildcard ("*") disables credentials to prevent ambient-authority attacks.
 	allowCreds := len(cfg.CORSOrigins) > 0 && cfg.CORSOrigins[0] != "*"
