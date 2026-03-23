@@ -211,7 +211,9 @@ func (h *AuthHandler) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.issueSessionAndToken(w, r, user)
+	if !h.issueSessionAndToken(w, r, user) {
+		return
+	}
 
 	slog.Warn("audit", "action", "login_success", "actor", user.ID, "target_name", user.Username, "method", "local")
 
@@ -361,7 +363,9 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to update last login", "error", err)
 	}
 
-	h.issueSessionAndToken(w, r, user)
+	if !h.issueSessionAndToken(w, r, user) {
+		return
+	}
 
 	slog.Warn("audit", "action", "login_success", "actor", user.ID, "target_name", user.Username, "method", "oidc")
 
@@ -542,7 +546,9 @@ func (h *AuthHandler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 }
 
 // issueSessionAndToken creates a session and sets both session and JWT cookies.
-func (h *AuthHandler) issueSessionAndToken(w http.ResponseWriter, r *http.Request, user *domain.User) {
+// Returns false if session creation or token issuance fails (an error response
+// will already have been written to w).
+func (h *AuthHandler) issueSessionAndToken(w http.ResponseWriter, r *http.Request, user *domain.User) bool {
 	// Create session
 	now := time.Now()
 	sess := &domain.Session{
@@ -553,6 +559,8 @@ func (h *AuthHandler) issueSessionAndToken(w http.ResponseWriter, r *http.Reques
 	}
 	if err := h.store.CreateSession(r.Context(), sess); err != nil {
 		slog.Error("failed to create session", "error", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to create session")
+		return false
 	}
 
 	// Set session cookie (long-lived)
@@ -570,7 +578,8 @@ func (h *AuthHandler) issueSessionAndToken(w http.ResponseWriter, r *http.Reques
 	token, err := h.jwt.Issue(user.ID, user.Username, user.Name, user.Role)
 	if err != nil {
 		slog.Error("jwt issue failed", "error", err)
-		return
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to issue token")
+		return false
 	}
 
 	http.SetCookie(w, &http.Cookie{
@@ -585,6 +594,7 @@ func (h *AuthHandler) issueSessionAndToken(w http.ResponseWriter, r *http.Reques
 
 	// Set CSRF token cookie (readable by JS so the frontend can echo it back).
 	h.setCSRFCookie(w)
+	return true
 }
 
 // setCSRFCookie generates a fresh CSRF token and sets it as a non-HttpOnly cookie.

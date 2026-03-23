@@ -486,7 +486,9 @@ func (h *MFAHandler) HandleMFAVerifyTOTP(w http.ResponseWriter, r *http.Request)
 		slog.Error("use mfa challenge", "error", err)
 	}
 
-	h.issueSessionAndToken(w, r, user)
+	if !h.issueSessionAndToken(w, r, user) {
+		return
+	}
 
 	slog.Warn("audit", "action", "mfa_login_totp", "actor", user.ID, "target_name", user.Username)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -599,7 +601,9 @@ func (h *MFAHandler) HandleMFAWebAuthnFinish(w http.ResponseWriter, r *http.Requ
 		slog.Error("use mfa challenge", "error", err)
 	}
 
-	h.issueSessionAndToken(w, r, user)
+	if !h.issueSessionAndToken(w, r, user) {
+		return
+	}
 
 	slog.Warn("audit", "action", "mfa_login_webauthn", "actor", user.ID, "target_name", user.Username)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -714,7 +718,9 @@ func (h *MFAHandler) HandlePasskeyLoginFinish(w http.ResponseWriter, r *http.Req
 		slog.Error("update last login", "error", err)
 	}
 
-	h.issueSessionAndToken(w, r, user)
+	if !h.issueSessionAndToken(w, r, user) {
+		return
+	}
 
 	slog.Warn("audit", "action", "passkey_login", "actor", user.ID, "target_name", user.Username)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -755,7 +761,7 @@ func (h *MFAHandler) validateMFAChallenge(r *http.Request, mfaToken string) (*do
 	return user, nil
 }
 
-func (h *MFAHandler) issueSessionAndToken(w http.ResponseWriter, r *http.Request, user *domain.User) {
+func (h *MFAHandler) issueSessionAndToken(w http.ResponseWriter, r *http.Request, user *domain.User) bool {
 	now := time.Now()
 	sess := &domain.Session{
 		ID:        uuid.New().String(),
@@ -765,6 +771,8 @@ func (h *MFAHandler) issueSessionAndToken(w http.ResponseWriter, r *http.Request
 	}
 	if err := h.store.CreateSession(r.Context(), sess); err != nil {
 		slog.Error("failed to create session", "error", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to create session")
+		return false
 	}
 
 	http.SetCookie(w, &http.Cookie{
@@ -780,7 +788,8 @@ func (h *MFAHandler) issueSessionAndToken(w http.ResponseWriter, r *http.Request
 	token, err := h.jwt.Issue(user.ID, user.Username, user.Name, user.Role)
 	if err != nil {
 		slog.Error("jwt issue failed", "error", err)
-		return
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to issue token")
+		return false
 	}
 
 	http.SetCookie(w, &http.Cookie{
@@ -797,7 +806,7 @@ func (h *MFAHandler) issueSessionAndToken(w http.ResponseWriter, r *http.Request
 	csrfToken, err := GenerateCSRFToken()
 	if err != nil {
 		slog.Error("failed to generate CSRF token", "error", err)
-		return
+		return false
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     csrfCookieName,
@@ -808,6 +817,7 @@ func (h *MFAHandler) issueSessionAndToken(w http.ResponseWriter, r *http.Request
 		Secure:   h.secureCookie,
 		SameSite: http.SameSiteLaxMode,
 	})
+	return true
 }
 
 // maybeDisableMFA checks if user still has any MFA credentials and disables MFA if not.
